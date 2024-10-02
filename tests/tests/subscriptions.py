@@ -1,17 +1,6 @@
 from ajprax.sentinel import Unset
-from ajprax.subscriptions import Events, Notifications, Value
-
-
-def is_odd(i):
-    return i % 2
-
-
-def double(i):
-    return i * 2
-
-
-def tower(i):
-    return [i] * i
+from ajprax.subscriptions import Notifications, Events, Value
+from tests import is_odd, tower, double
 
 
 class TestNotifications:

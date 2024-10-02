@@ -1,14 +1,12 @@
 from ajprax.require import require, RequirementException
+from tests import should_raise
 
 
 def test_require():
     def raises(exception, s):
         def test(*a, **kw):
-            try:
+            with should_raise(exception, s):
                 require(*a, **kw)
-                assert False, "should have raised"
-            except exception as e:
-                assert str(e) == s
 
         return test
 
