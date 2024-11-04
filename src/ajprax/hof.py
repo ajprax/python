@@ -1,27 +1,5 @@
-def t(f):
-    """
-    Convert a function of N arguments to a function of one N-degree tuple
-
-    Useful with higher order functions that expect a single-argument function as input. This is given as an alternative
-    to implementing a star_map, star_for_each, star_flat_map, etc functions for all collections.
-
-    Example:
-        def add(a, b):
-            return a + b
-
-        # imagine that the standard library had nice collections
-        pairs = [(1, 2), (2, 4), (3, 6)]
-        pairs.map(lambda pair: add(pair[0], pair[1]))
-        # no manual decomposition of the pair, use functions that weren't written for use with HOFs
-        pairs.map(t(add))
-        # use more readable lambdas
-        pairs.map(t(lambda a, b: a + b))
-    """
-
-    def t(t):
-        return f(*t)
-
-    return t
+def identity(x):
+    return x
 
 
 def kw(f):
@@ -46,3 +24,29 @@ def kw(f):
         return f(**kw)
 
     return kw
+
+
+def t(f):
+    """
+    Convert a function of N arguments to a function of one N-degree tuple
+
+    Useful with higher order functions that expect a single-argument function as input. This is given as an alternative
+    to implementing a star_map, star_for_each, star_flat_map, etc functions for all collections.
+
+    Example:
+        def add(a, b):
+            return a + b
+
+        # imagine that the standard library had nice collections
+        pairs = [(1, 2), (2, 4), (3, 6)]
+        pairs.map(lambda pair: add(pair[0], pair[1]))
+        # no manual decomposition of the pair, use functions that weren't written for use with HOFs
+        pairs.map(t(add))
+        # use more readable lambdas
+        pairs.map(t(lambda a, b: a + b))
+    """
+
+    def t(t):
+        return f(*t)
+
+    return t

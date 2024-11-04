@@ -1,4 +1,5 @@
 # `ajprax`
 
-A collection of pure-python utilities with no required dependencies. 
-Optional dependencies are automatically detected.
+Pure-python utilities with no required dependencies (`tqdm` optional).
+
+`from ajprax.prelude import *`

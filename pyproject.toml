@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ajprax"
 version = "0.0.1"
-authors = [{ name="Aaron Feldstein", email="ajprax@gmail.com" }]
+authors = [{ name = "Aaron Feldstein", email = "ajprax@gmail.com" }]
 description = "A collection of generic utilities"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -14,7 +14,14 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = []
+
+[tool.hatch.envs.test]
+dependencies = ["tqdm", "watchdog"]
+
+[tool.hatch.envs.test.scripts]
+watch = "python watch_tests.py"
 
 [project.urls]
-Homepage = "https://github.com/ajprax/ajprax"
-Issues = "https://github.com/ajprax/ajprax/issues"
+Homepage = "https://github.com/ajprax/python"
+Issues = "https://github.com/ajprax/python/issues"

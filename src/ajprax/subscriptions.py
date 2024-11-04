@@ -12,7 +12,9 @@ class Notifications:
         self._callbacks = []
 
     def subscribe(self, callback):
+        from ajprax._notifications import UnsubscribeOnExit
         self._callbacks.append(callback)
+        return UnsubscribeOnExit(self, callback)
 
     def unsubscribe(self, callback):
         self._callbacks.remove(callback)
@@ -27,15 +29,15 @@ class Events(Notifications):
         self.notify(event)
 
     def filter(self, fn):
-        from ajprax.subscriptions._events import Filtered
+        from ajprax._events import Filtered
         return Filtered(self, fn)
 
     def flat_map(self, fn):
-        from ajprax.subscriptions._events import FlatMapped
+        from ajprax._events import FlatMapped
         return FlatMapped(self, fn)
 
     def map(self, fn):
-        from ajprax.subscriptions._events import Mapped
+        from ajprax._events import Mapped
         return Mapped(self, fn)
 
     def on(self):
@@ -43,9 +45,51 @@ class Events(Notifications):
 
 
 class Value(Notifications):
+    def __iadd__(self, other):
+        self.value += other
+
+    def __iand__(self, other):
+        self.value &= other
+
+    def __idiv__(self, other):
+        self.value /= other
+
+    def __ifloordiv__(self, other):
+        self.value //= other
+
+    def __ilshift__(self, other):
+        self.value <<= other
+
+    def __imatmul__(self, other):
+        self.value @= other
+
+    def __imod__(self, other):
+        self.value %= other
+
     def __init__(self, initial=Unset):
         Notifications.__init__(self)
         self._value = initial
+
+    def __imul__(self, other):
+        self.value *= other
+
+    def __ior__(self, other):
+        self.value |= other
+
+    def __ipow__(self, other):
+        self.value **= other
+
+    def __irshift__(self, other):
+        self.value >>= other
+
+    def __isub__(self, other):
+        self.value -= other
+
+    def __itruediv__(self, other):
+        self.value /= other
+
+    def __ixor__(self, other):
+        self.value ^= other
 
     @property
     def value(self):
@@ -60,24 +104,33 @@ class Value(Notifications):
         self.notify(value)
 
     def subscribe(self, callback):
-        Notifications.subscribe(self, callback)
         if self._value is not Unset:
             callback(self._value)
+        return Notifications.subscribe(self, callback)
+
+    def always(self, key=Unset):
+        pass  # TODO: like all
+
+    def is_(self, predicate=Unset):
+        pass
+
+    def has_been(self, predicate=Unset):
+        pass
 
     def changed(self):
         return self.changes().on()
 
     def changes(self):
-        from ajprax.subscriptions._value import Changes
+        from ajprax._value import Changes
         return Changes(self)
 
     def map(self, fn):
-        from ajprax.subscriptions._value import Mapped
+        from ajprax._value import Mapped
         return Mapped(self, fn)
 
     def on(self):
         return Notifications.on(self)
 
     def zip(self, *others):
-        from ajprax.subscriptions._value import Zipped
+        from ajprax._value import Zipped
         return Zipped(self, *others)
