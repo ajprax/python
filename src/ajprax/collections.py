@@ -2,7 +2,13 @@ import functools
 import itertools
 import time
 from collections import defaultdict, deque
-from operator import itemgetter, add, call
+from operator import itemgetter, add
+
+try:
+    from operator import call
+except ImportError:
+    def call(f):
+        return f()
 
 from ajprax.hof import identity
 from ajprax.require import require
