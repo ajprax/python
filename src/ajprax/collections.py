@@ -104,11 +104,7 @@ class Deque(deque):
         return self.iter().count(key=key)
 
     def cycle(self):
-        def gen():
-            while True:
-                yield from self
-
-        return Iter(gen())
+        return self.iter().cycle()
 
     def dict(self):
         return Dict(self)
@@ -1073,7 +1069,7 @@ class List(list):
         return self.iter().count(key=key)
 
     def cycle(self):
-        return self.repeat().flatten()
+        return self.iter().cycle()
 
     def dict(self):
         return Dict(self)
@@ -1316,11 +1312,7 @@ class Range:
         return self.iter().count(key=key)
 
     def cycle(self):
-        def gen():
-            while True:
-                yield from self
-
-        return Iter(gen())
+        return self.iter().cycle()
 
     def do(self, f):
         return self.iter().do(f)
