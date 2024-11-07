@@ -108,14 +108,9 @@ class Value(Notifications):
             callback(self._value)
         return Notifications.subscribe(self, callback)
 
-    def always(self, key=Unset):
-        pass  # TODO: like all
-
-    def is_(self, predicate=Unset):
-        pass
-
-    def has_been(self, predicate=Unset):
-        pass
+    def always(self, predicate=bool):
+        from ajprax._value import Always
+        return Always(self, predicate)
 
     def changed(self):
         return self.changes().on()
@@ -124,9 +119,21 @@ class Value(Notifications):
         from ajprax._value import Changes
         return Changes(self)
 
+    def has_been(self, predicate=bool):
+        from ajprax._value import HasBeen
+        return HasBeen(self, predicate)
+
+    def is_(self, predicate=bool):
+        from ajprax._value import Is
+        return Is(self, predicate)
+
     def map(self, fn):
         from ajprax._value import Mapped
         return Mapped(self, fn)
+
+    def never(self, predicate=bool):
+        from ajprax._value import Always
+        return Always(self, lambda value: not predicate(value))
 
     def on(self):
         return Notifications.on(self)

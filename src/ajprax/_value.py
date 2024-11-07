@@ -18,10 +18,43 @@ class ValueCombinator(ABC, Value):
         self.v.unsubscribe(self.on_set)
 
 
+class Always(ValueCombinator):
+    def __init__(self, value, predicate):
+        self.predicate = predicate
+        ValueCombinator.__init__(self, value)
+
+    def on_set(self, value):
+        if self.value is Unset:
+            self.value = self.predicate(value)
+        else:
+            self.value &= self.predicate(value)
+
+
 class Changes(ValueCombinator):
     def on_set(self, value):
         if value != self.value:
             self.set(value)
+
+
+class HasBeen(ValueCombinator):
+    def __init__(self, value, predicate):
+        self.predicate = predicate
+        ValueCombinator.__init__(self, value)
+
+    def on_set(self, value):
+        if self.value is Unset:
+            self.value = self.predicate(value)
+        else:
+            self.value |= self.predicate(value)
+
+
+class Is(ValueCombinator):
+    def __init__(self, value, predicate):
+        self.predicate = predicate
+        ValueCombinator.__init__(self, value)
+
+    def on_set(self, value):
+        self.set(self.predicate(value))
 
 
 class Mapped(ValueCombinator):
