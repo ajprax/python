@@ -893,11 +893,11 @@ class TestIter:
         assert iter_eq(iter(it), range(2))
         it = Iter(range(2))
         assert it.peek() == 0
-        assert it.peek2() == 1
+        assert it.peek(2) == 1
         assert iter_eq(iter(it), range(2))
         it = Iter(range(3))
         assert it.peek() == 0
-        assert it.peek2() == 1
+        assert it.peek(2) == 1
         assert iter_eq(iter(it), range(3))
 
         items = []
@@ -937,7 +937,7 @@ class TestIter:
 
         it = Iter(range(2))
         assert it.peek() == 0
-        assert it.peek2() == 1
+        assert it.peek(2) == 1
         assert next(it) == 0
         assert it.peek() == 1
         assert next(it) == 1
@@ -1256,25 +1256,22 @@ class TestIter:
         assert it.peek() == 1
         assert it.has_next()
 
-    def test_has_next2(self):
-        test = by_eq(Iter, "has_next2")
-
-        test(False, [])
-        test(False, [1])
-        test(True, [1, 2])
+        test(False, [], 2)
+        test(False, [1], 2)
+        test(True, [1, 2], 2)
 
         it = Iter([1])
         assert it.peek() == 1
         assert it.has_next()
-        assert not it.has_next2()
+        assert not it.has_next(2)
 
         it = Iter([1, 2])
         assert it.peek() == 1
-        assert it.peek2() == 2
-        assert it.has_next2()
+        assert it.peek(2) == 2
+        assert it.has_next(2)
         assert it.next() == 1
         assert it.has_next()
-        assert not it.has_next2()
+        assert not it.has_next(2)
 
     def test_intersperse(self):
         test = by_iter_eq(Iter, "intersperse")
@@ -1409,7 +1406,7 @@ class TestIter:
 
         it = Iter(range(2))
         assert it.peek() == 0
-        assert it.peek2() == 1
+        assert it.peek(2) == 1
         assert it.next() == 0
         assert it.peek() == 1
         assert it.next() == 1
@@ -1466,33 +1463,32 @@ class TestIter:
         with should_raise(ValueError, "peek past end of iterator"):
             it.peek()
 
-    def test_peek2(self):
         with should_raise(ValueError, "peek past end of iterator"):
-            Iter().peek2()
+            Iter().peek(2)
         it = Iter([1])
         with should_raise(ValueError, "peek past end of iterator"):
-            it.peek2()
+            it.peek(2)
         assert it.next() == 1
         with should_raise(ValueError, "peek past end of iterator"):
-            it.peek2()
+            it.peek(2)
         it = Iter([1, 2])
-        assert it.peek2() == 2
+        assert it.peek(2) == 2
         assert it.next() == 1
         with should_raise(ValueError, "peek past end of iterator"):
-            it.peek2()
+            it.peek(2)
         assert it.next() == 2
         with should_raise(ValueError, "peek past end of iterator"):
-            it.peek2()
+            it.peek(2)
         it = Iter([1, 2, 3])
-        assert it.peek2() == 2
+        assert it.peek(2) == 2
         assert it.next() == 1
-        assert it.peek2() == 3
+        assert it.peek(2) == 3
         assert it.next() == 2
         with should_raise(ValueError, "peek past end of iterator"):
-            it.peek2()
+            it.peek(2)
         assert it.next() == 3
         with should_raise(ValueError, "peek past end of iterator"):
-            it.peek2()
+            it.peek(2)
 
     def test_permutations(self):
         test = by_iter_eq(Iter, "permutations")

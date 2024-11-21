@@ -501,8 +501,7 @@ class DefaultDict(Dict, defaultdict):
 class Iter:
     def __init__(self, it=()):
         self._it = iter(it)
-        self._peek = Unset
-        self._peek2 = Unset
+        self._peek = Deque()
 
     def __add__(self, other):
         return self.chain(other)
@@ -514,27 +513,17 @@ class Iter:
         return False
 
     def __iter__(self):
-        if self._peek is not Unset:
-            if self._peek2 is not Unset:
-                _peek, _peek2, self._peek, self._peek2 = self._peek, self._peek2, Unset, Unset
-                yield _peek
-                yield _peek2
-            else:
-                _peek, self._peek = self._peek, Unset
-                yield _peek
+        while self._peek:
+            yield self._peek.popleft()
         yield from self._it
 
     def __mul__(self, n):
         return self.repeat(n)
 
     def __next__(self):
-        if self._peek is Unset:
-            return next(self._it)
-        if self._peek2 is Unset:
-            _peek, self._peek = self._peek, Unset
-            return _peek
-        _peek, self._peek, self._peek2 = self._peek, self._peek2, Unset
-        return _peek
+        if self._peek:
+            return self._peek.popleft()
+        return next(self._it)
 
     def __radd__(self, other):
         return Iter(other).chain(self)
@@ -715,23 +704,13 @@ class Iter:
                 out.setdefault(key(item), List()).append(item)
         return out
 
-    def has_next(self):
+    def has_next(self, n=1):
         try:
-            if self._peek is Unset:
-                self._peek = next(self._it)
-            return True
+            for _ in range(n - len(self._peek)):
+                self._peek.append(next(self._it))
         except StopIteration:
             return False
-
-    def has_next2(self):
-        try:
-            if self._peek is Unset:
-                self._peek = next(self._it)
-            if self._peek2 is Unset:
-                self._peek2 = next(self._it)
-            return True
-        except StopIteration:
-            return False
+        return len(self._peek) >= n
 
     def intersperse(self, item):
         def gen():
@@ -857,15 +836,9 @@ class Iter:
         falses = deque()
         return Iter(Trues(self)), Iter(Falses(self))
 
-    def peek(self, default=Unset):
-        if self.has_next():
-            return self._peek
-        require(default is not Unset, "peek past end of iterator", _exc=ValueError)
-        return default
-
-    def peek2(self, default=Unset):
-        if self.has_next2():
-            return self._peek2
+    def peek(self, n=1, default=Unset):
+        if self.has_next(n):
+            return self._peek[n - 1]
         require(default is not Unset, "peek past end of iterator", _exc=ValueError)
         return default
 
@@ -971,7 +944,7 @@ class Iter:
                     if item:
                         yield item
                     else:
-                        self._peek = item
+                        self._peek.append(item)
                         break
         else:
             def gen():
@@ -979,7 +952,7 @@ class Iter:
                     if predicate(item):
                         yield item
                     else:
-                        self._peek = item
+                        self._peek.append(item)
                         break
 
         return Iter(gen())
