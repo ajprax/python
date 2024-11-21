@@ -1,6 +1,2 @@
-from ajprax.prelude import *
-
-
 def test():
-    # just tests the import
-    pass
+    from ajprax.prelude import Iter, RequirementException, Sentinel, identity, log, print

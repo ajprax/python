@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from ajprax.subscriptions import Events
+from ajprax.experimental.subscriptions import Events
 from ajprax.print import print
 
 TRACE = 0
