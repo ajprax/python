@@ -900,6 +900,11 @@ class TestIter:
         assert it.peek2() == 1
         assert iter_eq(iter(it), range(3))
 
+        items = []
+        for i in Iter(range(3)):
+            items.append(i)
+        assert iter_eq(items, range(3))
+
     def test___mul__(self):
         test = by_iter_eq(Iter, "__mul__")
 
