@@ -23,12 +23,10 @@ from ajprax.sentinel import Unset
 
 
 def count(start=0, step=1):
-    from ajprax.collections import Iter
     return Iter(itertools.count(start, step))
 
 
 def repeated(item, n=Unset):
-    from ajprax.collections import Iter
     if n is Unset:
         return Iter(itertools.repeat(item))
     return Iter(itertools.repeat(item, n))
