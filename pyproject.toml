@@ -17,7 +17,7 @@ classifiers = [
 dependencies = []
 
 [tool.hatch.envs.test]
-dependencies = ["tqdm", "watchdog"]
+dependencies = ["crcmod", "tqdm", "watchdog"]
 
 [tool.hatch.envs.test.scripts]
 watch = "python watch_tests.py"
