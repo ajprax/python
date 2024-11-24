@@ -1,7 +1,7 @@
 from base64 import b64encode
 from os import path
 
-from ajprax.files import md5, sha1, sha256
+from ajprax.files import md5, sha1, sha256, crc32c
 
 
 def asset(name):
@@ -26,12 +26,11 @@ def test_hashers():
         test("empty", empty)
         test("stuff", stuff)
 
-    # from ajprax.files import crc32c
-    # test(
-    #     crc32c,
-    #     b"\x00\x00\x00\x00",
-    #     b"\xf7\x88\xc4\x84",
-    # )
+    test(
+        crc32c,
+        b"\x00\x00\x00\x00",
+        b"\xf7\x88\xc4\x84",
+    )
     test(
         md5,
         b"\xd4\x1d\x8c\xd9\x8f\x00\xb2\x04\xe9\x80\t\x98\xec\xf8B~",
