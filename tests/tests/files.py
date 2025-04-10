@@ -1,27 +1,33 @@
 from base64 import b64encode
 from os import path
 
-from ajprax.files import md5, sha1, sha256, crc32c
+from ajprax.files import contents, crc32c, md5, sha1, sha256
+from tests import iter_eq
 
 
 def asset(name):
     return path.join(path.dirname(__file__), "assets", name)
 
 
+def test_contents():
+    def test(filename, chunks, *a, **kw):
+        assert iter_eq(contents(filename, *a, **kw), chunks)
+
+    test(asset("empty"), [])
+    test(asset("empty"), [], binary=True)
+    test(asset("empty"), [], chunk_size=1)
+    test(asset("empty"), [], binary=True, chunk_size=5)
+    test(asset("stuff"), ["some text or something"])
+    test(asset("stuff"), [b"some text or something"], binary=True)
+    test(asset("stuff"), ["some ", "text ", "or so", "methi", "ng"], chunk_size=5)
+    test(asset("stuff"), [b"some ", b"text ", b"or so", b"methi", b"ng"], binary=True, chunk_size=5)
+
+
 def test_hashers():
     def test(hash, empty, stuff):
         def test(filename, raw):
-            try:
-                assert hash(asset(filename)) == raw
-            except:
-                print("raw", hash, filename, hash(asset(filename)))
-                raise
-
-            try:
-                assert hash(asset(filename), b64encode) == b64encode(raw)
-            except:
-                print("raw", hash, filename, hash(asset(filename)))
-                raise
+            assert hash(asset(filename)) == raw
+            assert hash(asset(filename), b64encode) == b64encode(raw)
 
         test("empty", empty)
         test("stuff", stuff)

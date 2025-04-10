@@ -1,20 +1,33 @@
+from ajprax.collections import Iter
+from ajprax.require import require
+
 try:
     import crcmod
 except ImportError:
     crcmod = False
 
 
+def contents(filename, binary=False, chunk_size=4096):
+    require(chunk_size > 0, chunk_size=chunk_size)
+
+    def gen():
+        with open(filename, "rb" if binary else "r") as f:
+            chunk = f.read(chunk_size)
+            while chunk:
+                yield chunk
+                chunk = f.read(chunk_size)
+
+    return Iter(gen())
+
+
 def hash(filename, hasher, encode=None):
     h = hasher()
-    with open(filename, "rb") as f:
-        chunk = f.read(4096)
-        while len(chunk) > 0:
-            h.update(chunk)
-            chunk = f.read(4096)
-        h = h.digest()
-        if encode:
-            h = encode(h)
-        return h
+    for chunk in contents(filename, binary=True):
+        h.update(chunk)
+    h = h.digest()
+    if encode:
+        h = encode(h)
+    return h
 
 
 if crcmod:
