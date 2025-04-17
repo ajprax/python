@@ -1,4 +1,4 @@
-from operator import add, mul
+from operator import add, mul, itemgetter
 
 from ajprax.collections import Dict
 from ajprax.collections import Iter
@@ -209,6 +209,29 @@ class TestDict:
         test({0: "a", 1: "b", 2: "c"}, [a, b, c], False, "map_keys", double)
         test({0: "a", 2: "b", 4: "c"}, [a, b, c], True, "map_keys", double)
 
+    def test_count(self):
+        test = by_eq(Dict, "count")
+
+        a, b, c = enumerate("abc")
+
+        test({}, [], identity)
+        test({a: 1}, [a], identity)
+        test({a: 1, b: 1}, [a, b], identity)
+        test({a: 1, (1, "a"): 1}, [a, (1, "a")], identity)
+        test({a: 1, (1, "a"): 1, (2, "b"): 1}, [a, (1, "a"), (2, "b")], identity)
+
+        test({}, [], itemgetter(0))
+        test({0: 1}, [a], itemgetter(0))
+        test({0: 1, 1: 1}, [a, b], itemgetter(0))
+        test({0: 1, 1: 1}, [a, (1, "a")], itemgetter(0))
+        test({0: 1, 1: 1, 2: 1}, [a, (1, "a"), (2, "b")], itemgetter(0))
+
+        test({}, [], itemgetter(1))
+        test({"a": 1}, [a], itemgetter(1))
+        test({"a": 1, "b": 1}, [a, b], itemgetter(1))
+        test({"a": 2}, [a, (1, "a")], itemgetter(1))
+        test({"a": 2, "b": 1}, [a, (1, "a"), (2, "b")], itemgetter(1))
+
     def test_count_values(self):
         test = by_eq(Dict, "count_values")
 
@@ -249,6 +272,34 @@ class TestDict:
         test([a, b])
         test([b, a])
         test([a, b, c])
+
+    def test_distinct(self):
+        test = by_iter_eq(Dict, "distinct")
+
+        a, b, c = enumerate("abc")
+
+        test([], [], itemgetter(1))
+        test([a], [a], itemgetter(1))
+        test([b], [b], itemgetter(1))
+        test([a, b], [a, b], itemgetter(1))
+        test([b, a], [b, a], itemgetter(1))
+        test([a, b, c], [a, b, c], itemgetter(1))
+        test([a], [a, a], itemgetter(1))
+        test([a, b], [a, a, b], itemgetter(1))
+        test([a, b], [a, b, a], itemgetter(1))
+
+        def odd_letter_value(k, v):
+            return ord(v) % 2
+
+        test([], [], key=t(odd_letter_value))
+        test([a], [a], key=t(odd_letter_value))
+        test([b], [b], key=t(odd_letter_value))
+        test([a, b], [a, b], key=t(odd_letter_value))
+        test([b, a], [b, a], key=t(odd_letter_value))
+        test([a, b], [a, b, c], key=t(odd_letter_value))
+        test([a], [a, a], key=t(odd_letter_value))
+        test([a, b], [a, a, b], key=t(odd_letter_value))
+        test([a, b], [a, b, a], key=t(odd_letter_value))
 
     def test_distinct_values(self):
         test = by_iter_eq(Dict, "distinct_values")

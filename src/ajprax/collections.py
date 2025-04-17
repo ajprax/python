@@ -310,10 +310,14 @@ class Dict(dict):
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    # TODO: remove and just use .values().count(). This depends on .values() returning a custom class
-    # replaces count() because keys are guaranteed to be unique so count over items is degenerate
+    # key is required because items are guaranteed unique
+    def count(self, key):
+        return self.items().count(key=key)
+
     def count_values(self, key=Unset):
-        return Iter(self.values()).count(key=key)
+        if key is Unset:
+            return self.count(itemgetter(1))
+        return self.count(t(lambda k, v: key(v)))
 
     def cycle(self):
         return self.items().cycle()
@@ -321,11 +325,14 @@ class Dict(dict):
     def dict(self):
         return Dict(self)
 
-    # replaces distinct() because keys are guaranteed to be unique so distinct over items is degenerate
+    # key is required because items are guaranteed unique
+    def distinct(self, key):
+        return self.items().distinct(key=key)
+
     def distinct_values(self, key=Unset):
         if key is Unset:
-            return self.items().distinct()
-        return self.items().distinct(key=t(lambda k, v: key(v)))
+            return self.distinct(itemgetter(1))
+        return self.distinct(t(lambda k, v: key(v)))
 
     def do(self, f):
         return self.items().do(f)
@@ -373,7 +380,6 @@ class Dict(dict):
         return self.items().group_by(key=key)
 
     def intersection(self, *others):
-
         dicts = (self, *others)
         keys = Iter(dicts).map(lambda d: d.keys()).reduce(lambda a, b: a & b)
         out = Dict()
