@@ -565,7 +565,26 @@ class TestDict:
         test(0, [a, b, c], 1, mul_keys)
 
     def test_fold_while(self):
-        pass
+        test = by_eq(Dict, "fold_while")
+
+        def add_values(acc, item):
+            k, v = item
+            return acc + v
+
+        def mul_values(acc, item):
+            k, v = item
+            return acc * v
+
+        test(0, [], 0, add_values, less_than(3))
+        test(1, [], 1, add_values, less_than(3))
+        test(1, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 0, add_values, less_than(3))
+        test(3, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 0, add_values, less_than(4))
+        test(2, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 1, add_values, less_than(3))
+        test(2, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 1, add_values, less_than(4))
+        test(6, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 0, add_values, less_than(10))
+        test(7, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 1, add_values, less_than(10))
+        test(24, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 1, mul_values, less_than(30))
+        test(0, [("a", 1), ("b", 2), ("c", 3), ("d", 4)], 0, mul_values, less_than(30))
 
     def test_for_each(self):
         def test(items):
@@ -583,10 +602,44 @@ class TestDict:
         test([a, b, c])
 
     def test_group_by(self):
-        pass
+        test = by_eq(Dict, "group_by")
+
+        def key_len(item):
+            k, v = item
+            return len(k)
+
+        a = ("a", 0)
+        ab = ("ab", 1)
+        abc = ("abc", 2)
+        bcd = ("bcd", 3)
+
+        test({}, [])
+        test({a: [a], ab: [ab], abc: [abc], bcd: [bcd]}, [a, ab, abc, bcd])
+        test({}, [], key_len)
+        test({1: [a], 2: [ab], 3: [abc, bcd]}, [a, ab, abc, bcd], key_len)
 
     def test_intersection(self):
-        pass
+        test = by_eq(Dict, "intersection")
+
+        a = {"a": 1}
+        b = {"b": 2}
+        c = {"c": 3}
+        ab = {"a": 1, "b": 2}
+        abc = {"a": 1, "b": 2, "c": 3}
+
+        for l, r in Iter((a, b, c)).combinations(2):
+            test({}, l, r)
+            test({}, r, l)
+        test({}, a, b, c)
+        test(a, a, a)
+        test(a, a, ab)
+        test(a, ab, a)
+        test(a, a, abc)
+        test(a, abc, a)
+        test(b, b, ab)
+        test(b, ab, b)
+        test(ab, ab, abc)
+        test(ab, abc, ab)
 
     def test_intersperse(self):
         pass
@@ -851,19 +904,59 @@ class TestDict:
         test(b, [a, b, c], predicate=t(key_is_odd))
 
     def test_partition(self):
-        pass
+        def test(expected, items, *a, **kw):
+            etrue, efalse = expected
+            atrue, afalse = Dict(items).partition(*a, **kw)
+            assert iter_eq(atrue, etrue)
+            assert iter_eq(afalse, efalse)
+
+        test(([], []), [], itemgetter(0))
+        test(([], []), [], itemgetter(1))
+        test(([(True, 0)], [(False, 0)]), {True: 0, False: 0}, itemgetter(0))
+        test(([], [(True, 0), (False, 0)]), {True: 0, False: 0}, itemgetter(1))
+        test(([(1, "a")], [(2, "b")]), {1: "a", 2: "b"}, t(key_is_odd))
 
     def test_permutations(self):
-        pass
+        test = by_iter_eq(Dict, "permutations")
+
+        a = ("a", 1)
+        b = ("b", 2)
+
+        for r in range(1, 3):
+            test([], [], r)
+
+        test([(a,)], [a], 1)
+        test([], [a], 2)
+        test([(a, b), (b, a)], [a, b])
+        test([(a,), (b,)], [a, b], 1)
+        test([(a, b), (b, a)], [a, b], 2)
+        test([(b,), (a,)], [b, a], 1)
+        test([(b, a), (a, b)], [b, a], 2)
 
     def test_powerset(self):
-        pass
+        test = by_iter_eq(Dict, "powerset")
+
+        a = ("a", 1)
+        b = ("b", 2)
+        c = ("c", 3)
+
+        test([()], [])
+        test([(), (a,)], [a])
+        test([(), (a,), (b,), (a, b)], [a, b])
+        test([(), (a,), (b,), (c,), (a, b), (a, c), (b, c), (a, b, c)], [a, b, c])
 
     def test_product(self):
         pass
 
     def test_put(self):
-        pass
+        test = by_eq(Dict, "put")
+
+        test({"a": 1}, [], "a", 1)
+        test({"a": 1}, [("a", 1)], "a", 1)
+        test({"a": 1}, [("a", 0)], "a", 1)
+        test({"a": 1, "b": 2}, [("b", 2)], "a", 1)
+        test({"a": 1, "b": 2}, [("a", 1), ("b", 2)], "a", 1)
+        test({"a": 1, "b": 2}, [("a", 0), ("b", 2)], "a", 1)
 
     def test_repeat(self):
         pass
@@ -1577,11 +1670,18 @@ class TestIter:
         test([(1,), (2,), (3,)], [1, 2, 3])
         test([(1, 3), (1, 4), (2, 3), (2, 4)], [1, 2], [3, 4])
         # the docs for itertools.product only describe the behavior of different iterables or one iterable with
-        # repeat > 1, but it does allow multiple iterables and repeat > 1 and it repeats all iterables. Effectively it
+        # repeat > 1, but it does allow multiple iterables and repeat > 1, and it repeats all iterables. Effectively it
         # takes the product of the iterables and products the result `repeat` times, flattening the result.
-        test([(1, 3, 1, 3), (1, 3, 1, 4), (1, 3, 2, 3), (1, 3, 2, 4), (1, 4, 1, 3), (1, 4, 1, 4), (1, 4, 2, 3),
-              (1, 4, 2, 4), (2, 3, 1, 3), (2, 3, 1, 4), (2, 3, 2, 3), (2, 3, 2, 4), (2, 4, 1, 3), (2, 4, 1, 4),
-              (2, 4, 2, 3), (2, 4, 2, 4), ], [1, 2], [3, 4], repeat=2, )
+        test(
+            [
+                (1, 3, 1, 3), (1, 3, 1, 4), (1, 3, 2, 3), (1, 3, 2, 4), (1, 4, 1, 3), (1, 4, 1, 4), (1, 4, 2, 3),
+                (1, 4, 2, 4), (2, 3, 1, 3), (2, 3, 1, 4), (2, 3, 2, 3), (2, 3, 2, 4), (2, 4, 1, 3), (2, 4, 1, 4),
+                (2, 4, 2, 3), (2, 4, 2, 4),
+            ],
+            [1, 2],
+            [3, 4],
+            repeat=2,
+        )
         test([], [], [1], repeat=2)
         test([], [], [1, 2], repeat=2)
         test([], [], [1, 2, 3], repeat=2)
