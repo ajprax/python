@@ -81,10 +81,6 @@ class TestDefaultDict:
     pass
 
 
-class TestDeque:
-    pass
-
-
 class TestDict:
     def test___iter__(self):
         it = iter(Dict(key="value"))
