@@ -998,8 +998,7 @@ class Range:
     def __getitem__(self, item):
         if isinstance(item, int):
             return self._range[item]
-        r = self._range[item]
-        return Range(r.start, r.stop, r.step)
+        return Range(self._range[item])
 
     def __hash__(self):
         return hash(self._range)
