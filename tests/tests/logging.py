@@ -28,12 +28,9 @@ class TestLog:
     def test_format(self):
         def test(datetime, level, message, keywords, exception):
             log = str(Log(datetime, level, message, keywords, exception))
-            if message:
-                assert "log message" in log
-            if keywords:
-                assert "key='value'" in log
-            if exception:
-                assert "exception message" in log
+            assert ("log message" in log) == bool(message)
+            assert ("key='value'" in log) == bool(keywords)
+            assert ("exception message" in log) == bool(exception)
             assert log.split("\n")[0].startswith("2024-01-01T00:00:00.000001Z  INFO ")
 
         for (message, keywords, exception) in Iter((True, False)).product(repeat=3):
