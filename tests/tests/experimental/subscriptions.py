@@ -35,6 +35,21 @@ class TestNotifications:
         notifications.unsubscribe(test)
         notifications.notify()
 
+        with notifications.subscribe(test):
+            try:
+                notifications.notify()
+            except AssertionError:
+                pass
+        notifications.notify()
+
+        unsub = notifications.subscribe(test)
+        try:
+            notifications.notify()
+        except AssertionError:
+            pass
+        unsub()
+        notifications.notify()
+
 
 class TestEvents:
     def test_subscribe(self):

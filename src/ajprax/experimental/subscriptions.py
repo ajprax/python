@@ -18,7 +18,7 @@ class Notifications:
 
     def subscribe(self, callback):
         self._callbacks.append(callback)
-        return UnsubscribeOnExit(self, callback)
+        return Unsubscribe(self, callback)
 
     def unsubscribe(self, callback):
         self._callbacks.remove(callback)
@@ -28,16 +28,19 @@ class Notifications:
             callback(*a, **kw)
 
 
-class UnsubscribeOnExit:
+class Unsubscribe:
     def __init__(self, notifications, callback):
         self.notifications = notifications
         self.callback = callback
+
+    def __call__(self, *args, **kwargs):
+        self.notifications.unsubscribe(self.callback)
 
     def __enter__(self):
         pass
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.notifications.unsubscribe(self.callback)
+        self()
 
 
 class Events(Notifications):
