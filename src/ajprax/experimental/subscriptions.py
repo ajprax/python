@@ -81,24 +81,31 @@ class Events(Notifications):
 class Value(Notifications):
     def __iadd__(self, other):
         self.value += other
+        return self
 
     def __iand__(self, other):
         self.value &= other
+        return self
 
     def __idiv__(self, other):
         self.value /= other
+        return self
 
     def __ifloordiv__(self, other):
         self.value //= other
+        return self
 
     def __ilshift__(self, other):
         self.value <<= other
+        return self
 
     def __imatmul__(self, other):
         self.value @= other
+        return self
 
     def __imod__(self, other):
         self.value %= other
+        return self
 
     def __init__(self, initial=Unset):
         Notifications.__init__(self)
@@ -106,24 +113,31 @@ class Value(Notifications):
 
     def __imul__(self, other):
         self.value *= other
+        return self
 
     def __ior__(self, other):
         self.value |= other
+        return self
 
     def __ipow__(self, other):
         self.value **= other
+        return self
 
     def __irshift__(self, other):
         self.value >>= other
+        return self
 
     def __isub__(self, other):
         self.value -= other
+        return self
 
     def __itruediv__(self, other):
         self.value /= other
+        return self
 
     def __ixor__(self, other):
         self.value ^= other
+        return self
 
     @property
     def value(self):
