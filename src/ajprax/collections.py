@@ -933,6 +933,9 @@ class List(list):
         list.reverse(self)
         return self
 
+    def reversed(self):
+        return List(reversed(self))
+
     def set(self):
         return Set(self)
 
@@ -948,6 +951,9 @@ class List(list):
     def sort(self, key=None, reverse=False):
         list.sort(self, key=key, reverse=reverse)
         return self
+
+    def sorted(self, key=None, reverse=False):
+        return List(sorted(self, key=key, reverse=reverse))
 
     def take(self, n):
         return self[:n]
