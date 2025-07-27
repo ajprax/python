@@ -161,7 +161,7 @@ class Dict(dict):
         return out
 
     def intersperse(self, item):
-        self.items().intersperse(item)
+        return self.items().intersperse(item)
 
     def invert(self):
         return self.items().map(reversed).dict()
@@ -212,7 +212,7 @@ class Dict(dict):
         return self.items().powerset()
 
     def product(self, *its, repeat=1):
-        return self.items().product(*its, repeat=1)
+        return self.items().product(*its, repeat=repeat)
 
     def put(self, k, v):
         self[k] = v
@@ -237,7 +237,7 @@ class Dict(dict):
         return self.items().take(n)
 
     def take_while(self, predicate=Unset):
-        return self.take_while(predicate=predicate)
+        return self.items().take_while(predicate=predicate)
 
     def timestamp(self, clock=time.time):
         return self.items().timestamp(clock=clock)
@@ -1019,7 +1019,7 @@ class Range:
         return repr(self._range).title()
 
     def __reversed__(self):
-        return Range(reversed(self._range))
+        return reversed(self._range)
 
     @property
     def start(self):
