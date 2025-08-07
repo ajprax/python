@@ -92,3 +92,56 @@ class Logger(Events):
 
 
 log = Logger()
+
+
+def redact(value, rule):
+    if value is None or rule(value):
+        return value
+    return "REDACTED"
+
+
+class RedactingLogger(Events):
+    def __init__(self):
+        Events.__init__(self)
+        self.level = INFO
+        self.rules = {}
+        self.subscribe(print)
+
+    def register(self, cls, **rules):
+        from ajprax.require import require
+        require(cls not in self.rules, "duplicate registration")
+        self.rules[cls] = rules
+
+    def _log(self, level, message, exception):
+        self.send(Log(
+            datetime.now(timezone.utc),
+            level,
+            message.__class__.__name__,
+            {
+                name: redact(getattr(message, name, None), rule)
+                for name, rule
+                in self.rules[message.__class__].items()
+            },
+            exception,
+        ))
+
+    def trace(self, message, exception=False):
+        self._log(TRACE, message, exception)
+
+    def debug(self, message, exception=False):
+        self._log(DEBUG, message, exception)
+
+    def info(self, message, exception=False):
+        self._log(INFO, message, exception)
+
+    def warn(self, message, exception=False):
+        self._log(WARN, message, exception)
+
+    def error(self, message, exception=False):
+        self._log(ERROR, message, exception)
+
+    def fatal(self, message, exception=False):
+        self._log(FATAL, message, exception)
+
+
+rlog = RedactingLogger()
