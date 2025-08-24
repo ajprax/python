@@ -1,5 +1,6 @@
-# `ajprax`
+## Pure-python utilities with no required dependencies.
 
-Pure-python utilities with no required dependencies (`crcmod tqdm` optional).
+### Optional dependencies add functionality when available
 
-`from ajprax.prelude import *`
+* `crcmod`
+* `tqdm`
