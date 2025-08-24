@@ -21,6 +21,9 @@ except ImportError:
 from ajprax.hof import t
 from ajprax.sentinel import Unset
 
+dict_keys = type({}.keys())
+dict_values = type({}.values())
+
 
 def count(start=0, step=1):
     return Iter(itertools.count(start, step))
@@ -43,10 +46,42 @@ def timestamp(clock=time.time):
     return inner
 
 
-class Dict(dict):
-    # TODO:
-    #  give keys() and values() combinators (previously they were iterators which was awkward in interactive settings)
+def wrap(it):
+    match it:
+        # wrap is not a copy constructor, return already wrapped values unchanged
+        case (DefaultDict()
+              | Dict()
+              | DictKeys()
+              | DictValues()
+              | DictKeys()
+              | DictValues()
+              | Iter()
+              | List()
+              | Range()
+              | Set()
+              | Tuple()):
+            return it
+        case defaultdict():
+            return DefaultDict(it.default_factory).update(it)
+        case dict():
+            return Dict(it)
+        case dict_keys():
+            return DictKeys(it)
+        case dict_values():
+            return DictValues(it)
+        case list():
+            return List(it)
+        case set():
+            return Set(it)
+        case range():
+            return Range(it)
+        case tuple():
+            return Tuple(it)
+        case _:
+            return Iter(it)
 
+
+class Dict(dict):
     def __iter__(self):
         return Iter(dict.__iter__(self))
 
@@ -59,11 +94,11 @@ class Dict(dict):
     def apply(self, f):
         return f(self)
 
-    def apply_and_iter(self, f):
-        return Iter(f(self))
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
 
     def batch(self, size):
-        return self.items().batch(size)
+        return self.items().batch(size).map(Dict)
 
     def chain(self, *its):
         return self.items().chain(*its)
@@ -73,31 +108,32 @@ class Dict(dict):
         return self
 
     def combinations(self, r, with_replacement=False):
-        return self.items().combinations(r, with_replacement=with_replacement)
+        return self.items().combinations(r, with_replacement=with_replacement).map(Dict)
 
     def combine_if(self, condition, combinator, *a, **kw):
         if condition:
             return getattr(self, combinator)(*a, **kw)
         return self
 
+    def copy(self):
+        return Dict(dict.copy(self))
+
     # key is required because items are guaranteed unique
     def count(self, key):
         return self.items().count(key=key)
 
-    def count_values(self, key=Unset):
-        if key is Unset:
-            return self.count(itemgetter(1))
-        return self.count(t(lambda k, v: key(v)))
-
     def cycle(self):
         return self.items().cycle()
 
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
+
     def dict(self):
-        return Dict(self)
+        return self
 
     # key is required because items are guaranteed unique
     def distinct(self, key):
-        return self.items().distinct(key=key)
+        return self.items().distinct(key=key).dict()
 
     def distinct_values(self, key=Unset):
         if key is Unset:
@@ -105,37 +141,38 @@ class Dict(dict):
         return self.distinct(t(lambda k, v: key(v)))
 
     def do(self, f):
-        return self.items().do(f)
+        self.for_each(f)
+        return self
 
     def drop(self, n):
-        return self.items().drop(n)
+        return self.items().drop(n).dict()
 
     def drop_while(self, predicate):
-        return self.items().drop_while(predicate)
+        return self.items().drop_while(predicate).dict()
 
     def enumerate(self, start=0):
         return self.items().enumerate(start=start)
 
     def filter(self, predicate):
-        return self.items().filter(predicate)
+        return self.items().filter(predicate).dict()
 
     def filter_keys(self, predicate):
-        return self.items().filter(t(lambda k, v: predicate(k)))
+        return self.items().filter(t(lambda k, v: predicate(k))).dict()
 
     def filter_values(self, predicate):
-        return self.items().filter(t(lambda k, v: predicate(v)))
+        return self.items().filter(t(lambda k, v: predicate(v))).dict()
 
     def first(self, predicate=Unset, default=Unset):
         return self.items().first(predicate=predicate, default=default)
 
     def flat_map(self, f):
-        return self.items().flat_map(f)
+        return self.items().flat_map(f).dict()
 
     def flat_map_keys(self, f):
-        return self.items().flat_map(t(lambda k, v: ((k, v) for k in f(k))))
+        return self.items().flat_map(t(lambda k, v: ((k, v) for k in f(k)))).dict()
 
     def flat_map_values(self, f):
-        return self.items().flat_map(t(lambda k, v: ((k, v) for v in f(v))))
+        return self.items().flat_map(t(lambda k, v: ((k, v) for v in f(v)))).dict()
 
     def fold(self, initial, f):
         return self.items().fold(initial, f)
@@ -169,11 +206,8 @@ class Dict(dict):
     def items(self):
         return Iter(dict.items(self))
 
-    def iter_keys(self):
-        return Iter(self.keys())
-
-    def iter_values(self):
-        return Iter(self.values())
+    def keys(self):
+        return DictKeys(dict.keys(self))
 
     def last(self, predicate=Unset, default=Unset):
         return self.items().last(predicate=predicate, default=default)
@@ -182,13 +216,13 @@ class Dict(dict):
         return List(self.items())
 
     def map(self, f):
-        return self.items().map(f)
+        return self.items().map(f).dict()
 
     def map_keys(self, f):
-        return self.items().map(t(lambda k, v: (f(k), v)))
+        return self.items().map(t(lambda k, v: (f(k), v))).dict()
 
     def map_values(self, f):
-        return self.items().map(t(lambda k, v: (k, f(v))))
+        return self.items().map(t(lambda k, v: (k, f(v)))).dict()
 
     def max(self, key=None, default=Unset):
         return self.items().max(key=key, default=default)
@@ -203,13 +237,13 @@ class Dict(dict):
         return self.items().only(predicate=predicate)
 
     def partition(self, predicate):
-        return self.items().partition(predicate=predicate)
+        return wrap(self.items().partition(predicate=predicate)).map(Dict)
 
     def permutations(self, r=None):
         return self.items().permutations(r=r)
 
     def powerset(self):
-        return self.items().powerset()
+        return self.items().powerset().map(Dict)
 
     def product(self, *its, repeat=1):
         return self.items().product(*its, repeat=repeat)
@@ -228,16 +262,16 @@ class Dict(dict):
         return len(self)
 
     def sliding(self, size, step=1):
-        return self.items().sliding(size, step=step)
+        return self.items().sliding(size, step=step).map(Dict)
 
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
-        return self.items().sliding_by_timestamp(size, step=step, stamp=stamp)
+        return self.items().sliding_by_timestamp(size, step=step, stamp=stamp).map(Dict)
 
     def take(self, n):
-        return self.items().take(n)
+        return self.items().take(n).dict()
 
     def take_while(self, predicate=Unset):
-        return self.items().take_while(predicate=predicate)
+        return self.items().take_while(predicate=predicate).dict()
 
     def timestamp(self, clock=time.time):
         return self.items().timestamp(clock=clock)
@@ -263,6 +297,9 @@ class Dict(dict):
             dict.update(self, E, **F)
         return self
 
+    def values(self):
+        return DictValues(dict.values(self))
+
     def zip(self, *others, strict=False):
         return self.items().zip(*others, strict=strict)
 
@@ -272,6 +309,382 @@ class Dict(dict):
 
 class DefaultDict(Dict, defaultdict):
     pass
+
+
+class DictKeys:
+    def __init__(self, keys):
+        self._keys = keys
+
+    def __eq__(self, other):
+        print("DictKeys.__eq__", self, other)
+        if isinstance(other, DictKeys):
+            other = other._keys
+        return self._keys == other
+
+    def __len__(self):
+        return len(self._keys)
+
+    def __repr__(self):
+        return repr(self._keys)
+
+    def __iter__(self):
+        return Iter(self._keys)
+
+    def all(self, key=Unset):
+        return self.iter().all(key=key)
+
+    def any(self, key=Unset):
+        return self.iter().any(key=key)
+
+    def apply(self, f):
+        return f(self)
+
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
+
+    def batch(self, size):
+        return self.iter().batch(size).map(Set)
+
+    def chain(self, *its):
+        return self.iter().chain(*its)
+
+    def combinations(self, r, with_replacement=False):
+        return self.iter().combinations(r, with_replacement=with_replacement)
+
+    def combine_if(self, condition, combinator, *a, **kw):
+        if condition:
+            return getattr(self, combinator)(*a, **kw)
+        return self
+
+    def count(self, key=Unset):
+        return self.iter().count(key=key)
+
+    def cycle(self):
+        return self.iter().cycle()
+
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
+
+    def dict(self):
+        return Dict(self)
+
+    def distinct(self, key=Unset):
+        return self.iter().distinct(key=key).set()
+
+    def do(self, f):
+        self.for_each(f)
+        return self
+
+    def drop(self, n):
+        return self.iter().drop(n).set()
+
+    def drop_while(self, predicate):
+        return self.iter().drop_while(predicate).set()
+
+    def enumerate(self, start=0):
+        return self.iter().enumerate(start=start)
+
+    def filter(self, predicate=Unset):
+        return self.iter().filter(predicate=predicate).set()
+
+    def first(self, predicate=Unset, default=Unset):
+        return self.iter().first(predicate=predicate, default=default)
+
+    def flat_map(self, f):
+        return self.iter().flat_map(f).set()
+
+    def flatten(self):
+        return self.iter().flatten().set()
+
+    def fold(self, initial, f):
+        return self.iter().fold(initial, f)
+
+    def fold_while(self, initial, f, predicate):
+        return self.iter().fold_while(initial, f, predicate)
+
+    def for_each(self, f):
+        return self.iter().for_each(f)
+
+    def group_by(self, key=Unset):
+        return self.iter().group_by(key=key)
+
+    def iter(self):
+        return iter(self)
+
+    def last(self, predicate=Unset, default=Unset):
+        return self.iter().last(predicate=predicate, default=default)
+
+    def list(self):
+        return List(self)
+
+    def map(self, f):
+        return self.iter().map(f).set()
+
+    def map_to_keys(self, f):
+        return self.iter().map_to_keys(f)
+
+    def map_to_pairs(self, f):
+        return self.iter().map_to_pairs(f).set()
+
+    def map_to_values(self, f):
+        return self.iter().map_to_values(f)
+
+    def max(self, key=None, default=Unset):
+        return self.iter().max(key=key, default=default)
+
+    def min(self, key=None, default=Unset):
+        return self.iter().min(key=key, default=default)
+
+    def min_max(self, key=None, default=Unset):
+        return self.iter().min_max(key=key, default=default)
+
+    def only(self, predicate=Unset):
+        return self.iter().only(predicate=predicate)
+
+    def partition(self, predicate=Unset):
+        return wrap(self.iter().partition(predicate=predicate)).map(Set)
+
+    def permutations(self, r=None):
+        return self.iter().permutations(r=r)
+
+    def powerset(self):
+        return self.iter().powerset()
+
+    def product(self, *its, repeat=1):
+        return self.iter().product(*its, repeat=repeat)
+
+    def reduce(self, f):
+        return self.iter().reduce(f)
+
+    def repeat(self, n=Unset):
+        return self.iter().repeat(n=n)
+
+    def set(self):
+        return Set(self)
+
+    def size(self):
+        return len(self)
+
+    def sliding(self, size, step=1):
+        return self.iter().sliding(size, step=step).map(Set)
+
+    def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
+        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).map(Set)
+
+    def take(self, n):
+        return self.iter().take(n).set()
+
+    def take_while(self, predicate=Unset):
+        return self.iter().take_while(predicate=predicate).set()
+
+    def timestamp(self, clock=time.time):
+        return self.iter().timestamp(clock=clock).set()
+
+    if tqdm:
+        def tqdm(self, *a, **kw):
+            return self.iter().tqdm(*a, **kw)
+
+    def transpose(self):
+        return self.iter().transpose()
+
+    def tuple(self):
+        return Tuple(self)
+
+    unzip = transpose
+
+    def zip(self, *others, strict=False):
+        return self.iter().zip(*others, strict=strict).set()
+
+    def zip_longest(self, *others, fillvalue=None):
+        return self.iter().zip_longest(*others, fillvalue=fillvalue).set()
+
+
+class DictValues:
+    def __init__(self, values):
+        self._values = values
+
+    def __len__(self):
+        return len(self._values)
+
+    def __repr__(self):
+        return repr(self._values)
+
+    def __iter__(self):
+        return Iter(self._values)
+
+    def all(self, key=Unset):
+        return self.iter().all(key=key)
+
+    def any(self, key=Unset):
+        return self.iter().any(key=key)
+
+    def apply(self, f):
+        return f(self)
+
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
+
+    def batch(self, size):
+        return self.iter().batch(size).tuple()
+
+    def chain(self, *its):
+        return self.iter().chain(*its)
+
+    def combinations(self, r, with_replacement=False):
+        return self.iter().combinations(r, with_replacement=with_replacement)
+
+    def combine_if(self, condition, combinator, *a, **kw):
+        if condition:
+            return getattr(self, combinator)(*a, **kw)
+        return self
+
+    def count(self, key=Unset):
+        return self.iter().count(key=key)
+
+    def cycle(self):
+        return self.iter().cycle()
+
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
+
+    def dict(self):
+        return Dict(self)
+
+    def distinct(self, key=Unset):
+        return self.iter().distinct(key=key).tuple()
+
+    def do(self, f):
+        self.for_each(f)
+        return self
+
+    def drop(self, n):
+        return self.iter().drop(n)
+
+    def drop_while(self, predicate):
+        return self.iter().drop_while(predicate).tuple()
+
+    def enumerate(self, start=0):
+        return self.iter().enumerate(start=start).tuple()
+
+    def filter(self, predicate=Unset):
+        return self.iter().filter(predicate=predicate).tuple()
+
+    def first(self, predicate=Unset, default=Unset):
+        return self.iter().first(predicate=predicate, default=default)
+
+    def flat_map(self, f):
+        return self.iter().flat_map(f).tuple()
+
+    def flatten(self):
+        return self.iter().flatten().tuple()
+
+    def fold(self, initial, f):
+        return self.iter().fold(initial, f)
+
+    def fold_while(self, initial, f, predicate):
+        return self.iter().fold_while(initial, f, predicate)
+
+    def for_each(self, f):
+        return self.iter().for_each(f)
+
+    def group_by(self, key=Unset):
+        return self.iter().group_by(key=key)
+
+    def intersperse(self, item):
+        return self.iter().intersperse(item).tuple()
+
+    def iter(self):
+        return Iter(self)
+
+    def last(self, predicate=Unset, default=Unset):
+        return self.iter().last(predicate=predicate, default=default)
+
+    def list(self):
+        return List(self)
+
+    def map(self, f):
+        return self.iter().map(f).tuple()
+
+    def map_to_keys(self, f):
+        return self.iter().map_to_keys(f)
+
+    def map_to_pairs(self, f):
+        return self.iter().map_to_pairs(f).tuple()
+
+    def map_to_values(self, f):
+        return self.iter().map_to_values(f)
+
+    def max(self, key=None, default=Unset):
+        return self.iter().max(key=key, default=default)
+
+    def min(self, key=None, default=Unset):
+        return self.iter().min(key=key, default=default)
+
+    def min_max(self, key=None, default=Unset):
+        return self.iter().min_max(key=key, default=default)
+
+    def only(self, predicate=Unset):
+        return self.iter().only(predicate=predicate)
+
+    def partition(self, predicate=identity):
+        return wrap(self.iter().partition(predicate=predicate)).map(Tuple)
+
+    def permutations(self, r=None):
+        return self.iter().permutations(r)
+
+    def powerset(self):
+        return self.iter().powerset()
+
+    def product(self, *its, repeat=1):
+        return self.iter().product(*its, repeat=repeat)
+
+    def reduce(self, f):
+        return self.iter().reduce(f)
+
+    def repeat(self, n=Unset):
+        return self.iter().repeat(n=n)
+
+    def set(self):
+        return Set(self)
+
+    def size(self):
+        return len(self)
+
+    def sliding(self, size, step=1):
+        return self.iter().sliding(size, step=step).tuple()
+
+    def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
+        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).tuple()
+
+    def sorted(self, key=None, reverse=False):
+        return Tuple(sorted(self, key=key, reverse=reverse))
+
+    def take(self, n):
+        return self.iter().take(n)
+
+    def take_while(self, predicate=Unset):
+        return self.iter().take_while(predicate=predicate).tuple()
+
+    def timestamp(self, clock=time.time):
+        return self.iter().timestamp(clock=clock).tuple()
+
+    if tqdm:
+        def tqdm(self, *a, **kw):
+            return self.iter().tqdm(*a, **kw)
+
+    def transpose(self):
+        return self.iter().transpose().tuple()
+
+    def tuple(self):
+        return self
+
+    unzip = transpose
+
+    def zip(self, *others, strict=False):
+        return self.iter().zip(*others, strict=strict).tuple()
+
+    def zip_longest(self, *others, fillvalue=None):
+        return self.iter().zip_longest(*others, fillvalue=fillvalue).tuple()
 
 
 class Iter:
@@ -323,8 +736,8 @@ class Iter:
     def apply(self, f):
         return f(self)
 
-    def apply_and_iter(self, f):
-        return Iter(f(self))
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
 
     def batch(self, size):
         """
@@ -339,7 +752,7 @@ class Iter:
         except ImportError:
             return (
                 self.enumerate()
-                .apply_and_iter(functools.partial(itertools.groupby, key=t(lambda i, _: i // size)))
+                .apply_and_wrap(functools.partial(itertools.groupby, key=t(lambda i, _: i // size)))
                 .map(itemgetter(1))
                 .map(lambda batch: map(itemgetter(1), batch))
                 .map(Tuple)
@@ -368,6 +781,9 @@ class Iter:
 
     def cycle(self):
         return Iter(itertools.cycle(self))
+
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
 
     def dict(self):
         return Dict(self)
@@ -497,6 +913,9 @@ class Iter:
                     yield e
 
         return Iter(gen())
+
+    def iter(self):
+        return self
 
     def last(self, predicate=Unset, default=Unset):
         if predicate is not Unset:
@@ -760,8 +1179,7 @@ class Iter:
 
 class List(list):
     def __add__(self, other):
-        # TODO: remove unnecessary concatenation restrictions
-        return List(list.__add__(self, other))
+        return List((*self, *other))
 
     def __getitem__(self, item):
         if isinstance(item, int):
@@ -791,11 +1209,11 @@ class List(list):
     def apply(self, f):
         return f(self)
 
-    def apply_and_iter(self, f):
-        return Iter(f(self))
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
 
     def batch(self, size):
-        return self.iter().batch(size)
+        return self.iter().batch(size).list()
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -812,11 +1230,17 @@ class List(list):
             return getattr(self, combinator)(*a, **kw)
         return self
 
+    def copy(self):
+        return List(list.copy(self))
+
     def count(self, key=Unset):
         return self.iter().count(key=key)
 
     def cycle(self):
         return self.iter().cycle()
+
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
 
     def dict(self):
         return Dict(self)
@@ -829,35 +1253,36 @@ class List(list):
             return False
 
     def distinct(self, key=Unset):
-        return self.iter().distinct(key=key)
+        return self.iter().distinct(key=key).list()
 
     def do(self, f):
-        return self.iter().do(f)
+        self.for_each(f)
+        return self
 
     def drop(self, n):
         return self[n:]
 
     def drop_while(self, predicate):
-        return self.iter().drop_while(predicate)
+        return self.iter().drop_while(predicate).list()
 
     def enumerate(self, start=0):
-        return self.iter().enumerate(start=start)
+        return self.iter().enumerate(start=start).list()
 
     def extend(self, iterable):
         list.extend(self, iterable)
         return self
 
     def filter(self, predicate=Unset):
-        return self.iter().filter(predicate=predicate)
+        return self.iter().filter(predicate=predicate).list()
 
     def first(self, predicate=Unset, default=Unset):
         return self.iter().first(predicate=predicate, default=default)
 
     def flat_map(self, f):
-        return self.iter().flat_map(f)
+        return self.iter().flat_map(f).list()
 
     def flatten(self):
-        return self.iter().flatten()
+        return self.iter().flatten().list()
 
     def fold(self, initial, f):
         return self.iter().fold(initial, f)
@@ -876,7 +1301,7 @@ class List(list):
         return self
 
     def intersperse(self, item):
-        return self.iter().intersperse(item)
+        return self.iter().intersperse(item).list()
 
     def iter(self):
         return iter(self)
@@ -885,16 +1310,16 @@ class List(list):
         return self.iter().last(predicate=predicate, default=default)
 
     def list(self):
-        return List(self)
+        return self
 
     def map(self, f):
-        return self.iter().map(f)
+        return self.iter().map(f).list()
 
     def map_to_keys(self, f):
         return self.iter().map_to_keys(f)
 
     def map_to_pairs(self, f):
-        return self.iter().map_to_pairs(f)
+        return self.iter().map_to_pairs(f).list()
 
     def map_to_values(self, f):
         return self.iter().map_to_values(f)
@@ -912,7 +1337,7 @@ class List(list):
         return self.iter().only(predicate=predicate)
 
     def partition(self, predicate=identity):
-        return self.iter().partition(predicate=predicate)
+        return wrap(self.iter().partition(predicate=predicate)).map(List)
 
     def permutations(self, r=None):
         return self.iter().permutations(r)
@@ -934,7 +1359,7 @@ class List(list):
         return self
 
     def reversed(self):
-        return List(reversed(self))
+        return reversed(self)
 
     def set(self):
         return Set(self)
@@ -943,10 +1368,10 @@ class List(list):
         return len(self)
 
     def sliding(self, size, step=1):
-        return self.iter().sliding(size, step=step)
+        return self.iter().sliding(size, step=step).list()
 
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
-        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp)
+        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).list()
 
     def sort(self, key=None, reverse=False):
         list.sort(self, key=key, reverse=reverse)
@@ -959,17 +1384,17 @@ class List(list):
         return self[:n]
 
     def take_while(self, predicate=Unset):
-        return self.iter().take_while(predicate=predicate)
+        return self.iter().take_while(predicate=predicate).list()
 
     def timestamp(self, clock=time.time):
-        return self.iter().timestamp(clock=clock)
+        return self.iter().timestamp(clock=clock).list()
 
     if tqdm:
         def tqdm(self, *a, **kw):
             return self.iter().tqdm(*a, **kw)
 
     def transpose(self):
-        return self.iter().transpose()
+        return self.iter().transpose().list()
 
     def tuple(self):
         return Tuple(self)
@@ -977,17 +1402,20 @@ class List(list):
     unzip = transpose
 
     def zip(self, *others, strict=False):
-        return self.iter().zip(*others, strict=strict)
+        return self.iter().zip(*others, strict=strict).list()
 
     def zip_longest(self, *others, fillvalue=None):
-        return self.iter().zip_longest(*others, fillvalue=fillvalue)
+        return self.iter().zip_longest(*others, fillvalue=fillvalue).list()
 
 
 class Range:
     def __init__(self, *a, **kw):
-        if len(a) == 1 and isinstance(a[0], range):
+        if len(a) == 1 and isinstance(a[0], (range, Range)):
             require(not kw)
-            self._range = a[0]
+            if isinstance(a[0], range):
+                self._range = a[0]
+            else:
+                self._range = a[0]._range
         else:
             self._range = range(*a, **kw)
 
@@ -995,11 +1423,9 @@ class Range:
         return item in self._range
 
     def __eq__(self, other):
-        if isinstance(other, range):
-            return self._range == range
-        elif isinstance(other, Range):
-            return self._range == other._range
-        return False
+        if isinstance(other, Range):
+            other = other._range
+        return self._range == other
 
     def __getitem__(self, item):
         if isinstance(item, int):
@@ -1019,7 +1445,7 @@ class Range:
         return repr(self._range).title()
 
     def __reversed__(self):
-        return reversed(self._range)
+        return Range(self.start + (self.step * (len(self) - 1)), self.start - self.step, -self.step)
 
     @property
     def start(self):
@@ -1042,12 +1468,24 @@ class Range:
     def apply(self, f):
         return f(self)
 
-    def apply_and_iter(self, f):
-        return Iter(f(self))
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
 
     def batch(self, size):
-        # TODO: this can be specialized to output ranges
-        return self.iter().batch(size)
+        def gen():
+            batch_step = self.step * size
+            start = self.start
+            stop = min(self.stop, self.start + batch_step)
+            if stop == self.stop:
+                yield Range(start, stop, self.step)
+            else:
+                while stop < self.stop:
+                    yield Range(start, stop, self.step)
+                    start += batch_step
+                    stop = min(self.stop, stop + batch_step)
+                yield Range(start, stop, self.step)
+
+        return Iter(gen())
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1067,13 +1505,15 @@ class Range:
         return self.iter().cycle()
 
     def do(self, f):
-        return self.iter().do(f)
+        self.for_each(f)
+        return self
 
     def drop(self, n):
         return Range(self._range[n:])
 
     def drop_while(self, predicate):
-        return self.iter().drop_while(predicate)
+        start = self.first(lambda n: not predicate(n), self.stop)
+        return Range(start, self.stop, self.step)
 
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start)
@@ -1087,14 +1527,11 @@ class Range:
     def flat_map(self, f):
         return self.iter().flat_map(f)
 
-    def flatten(self):
-        return self.iter().flatten()
-
     def fold(self, initial, f):
-        return self.fold(initial, f)
+        return self.iter().fold(initial, f)
 
     def fold_while(self, initial, f, predicate):
-        return self.fold_while(initial, f, predicate)
+        return self.iter().fold_while(initial, f, predicate)
 
     def for_each(self, f):
         return self.iter().for_each(f)
@@ -1102,11 +1539,17 @@ class Range:
     def group_by(self, key=Unset):
         return self.iter().group_by(key=key)
 
+    def index(self, value):
+        return self._range.index(value)
+
     def intersperse(self, item):
         return self.iter().intersperse(item)
 
+    def iter(self):
+        return iter(self)
+
     def last(self, predicate=Unset, default=Unset):
-        return self.reverse().first(predicate=predicate, default=default)
+        return self.reversed().first(predicate=predicate, default=default)
 
     def list(self):
         return List(self)
@@ -1153,8 +1596,8 @@ class Range:
     def repeat(self, n=Unset):
         return self.iter().repeat(n=n)
 
-    def reverse(self):
-        return Range(reversed(self._range))
+    def reversed(self):
+        return reversed(self)
 
     def set(self):
         return Set(self)
@@ -1163,8 +1606,18 @@ class Range:
         return len(self)
 
     def sliding(self, size, step=1):
-        # TODO: this can be specialized to output ranges
-        return self.iter().sliding(size, step=step)
+        def gen():
+            window = self.take(size)
+
+            while window.size() == size:
+                yield window
+                window = Range(
+                    window.start + self.step * step,
+                    min(self.stop, window.stop + self.step * step),
+                    self.step,
+                )
+
+        return Iter(gen())
 
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
         return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp)
@@ -1173,7 +1626,8 @@ class Range:
         return Range(self._range[:n])
 
     def take_while(self, predicate=Unset):
-        return self.iter().take_while(predicate=predicate)
+        stop = self.first(lambda n: not predicate(n), self.stop)
+        return Range(self.start, stop, self.step)
 
     def timestamp(self, clock=time.time):
         return self.iter().timestamp(clock=clock)
@@ -1191,16 +1645,32 @@ class Range:
     def zip_longest(self, *others, fillvalue=None):
         return self.iter().zip_longest(*others, fillvalue=fillvalue)
 
-    def index(self, value):
-        return self._range.index(value)
-
-    def iter(self):
-        return iter(self)
-
 
 class Set(set):
+    def __add__(self, other):
+        return Set({*self, *other})
+
+    def __and__(self, other):
+        return Set(set.__and__(self, other))
+
+    def __iadd__(self, other):
+        self.update(other)
+        return self
+
     def __iter__(self):
         return Iter(set.__iter__(self))
+
+    def __isub__(self, other):
+        return Set(set.__isub__(self, other))
+
+    def __or__(self, other):
+        return Set(set.__or__(self, other))
+
+    def __sub__(self, other):
+        return Set(set.__sub__(self, other))
+
+    def __xor__(self, other):
+        return Set(set.__xor__(self, other))
 
     def add(self, item):
         if item in self:
@@ -1217,11 +1687,11 @@ class Set(set):
     def apply(self, f):
         return f(self)
 
-    def apply_and_iter(self, f):
-        return Iter(f(self))
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
 
     def batch(self, size):
-        return self.iter().batch(size)
+        return self.iter().batch(size).map(Set)
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1230,19 +1700,26 @@ class Set(set):
         set.clear(self)
         return self
 
-    def combinations(self, r, with_replacement=False):
-        return self.iter().combinations(r, with_replacement=with_replacement)
+    def combinations(self, r):
+        return self.iter().combinations(r).map(Set)
 
     def combine_if(self, condition, combinator, *a, **kw):
         if condition:
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def count(self, key=Unset):
+    def copy(self):
+        return Set(self)
+
+    def count(self, key):
+        """key is required since items are guaranteed unique"""
         return self.iter().count(key=key)
 
     def cycle(self):
         return self.iter().cycle()
+
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
 
     def dict(self):
         return Dict(self)
@@ -1251,33 +1728,36 @@ class Set(set):
         if item in self:
             self.remove(item)
             return True
+        return False
 
-    def distinct(self, key=Unset):
-        return self.iter().distinct(key=key)
+    def distinct(self, key):
+        """key is required because items are guaranteed unique"""
+        return self.iter().distinct(key=key).set()
 
     def do(self, f):
-        return self.iter().do(f)
+        self.for_each(f)
+        return self
 
     def drop(self, n):
-        return self.iter().drop(n)
+        return self.iter().drop(n).set()
 
     def drop_while(self, predicate):
-        return self.iter().drop_while(predicate)
+        return self.iter().drop_while(predicate).set()
 
     def enumerate(self, start=0):
-        return self.iter().enumerate(start=start)
+        return self.iter().enumerate(start=start).set()
 
     def filter(self, predicate=Unset):
-        return self.iter().filter(predicate=predicate)
+        return self.iter().filter(predicate=predicate).set()
 
     def first(self, predicate=Unset, default=Unset):
         return self.iter().first(predicate=predicate, default=default)
 
     def flat_map(self, f):
-        return self.iter().flat_map(f)
+        return self.iter().flat_map(f).set()
 
     def flatten(self):
-        return self.iter().flatten()
+        return self.iter().flatten().set()
 
     def fold(self, initial, f):
         return self.iter().fold(initial, f)
@@ -1288,11 +1768,9 @@ class Set(set):
     def for_each(self, f):
         return self.iter().for_each(f)
 
-    def group_by(self, key=Unset):
+    def group_by(self, key):
+        """key is required because items are guaranteed unique"""
         return self.iter().group_by(key=key)
-
-    def intersperse(self, item):
-        return self.iter().intersperse(item)
 
     def iter(self):
         return iter(self)
@@ -1304,13 +1782,13 @@ class Set(set):
         return List(self)
 
     def map(self, f):
-        return self.iter().map(f)
+        return self.iter().map(f).set()
 
     def map_to_keys(self, f):
         return self.iter().map_to_keys(f)
 
     def map_to_pairs(self, f):
-        return self.iter().map_to_pairs(f)
+        return self.iter().map_to_pairs(f).set()
 
     def map_to_values(self, f):
         return self.iter().map_to_values(f)
@@ -1328,7 +1806,7 @@ class Set(set):
         return self.iter().only(predicate=predicate)
 
     def partition(self, predicate=Unset):
-        return self.iter().partition(predicate=predicate)
+        return wrap(self.iter().partition(predicate=predicate)).map(Set)
 
     def permutations(self, r=None):
         return self.iter().permutations(r=r)
@@ -1346,25 +1824,25 @@ class Set(set):
         return self.iter().repeat(n=n)
 
     def set(self):
-        return Set(self)
+        return self
 
     def size(self):
         return len(self)
 
     def sliding(self, size, step=1):
-        return self.iter().sliding(size, step=step)
+        return self.iter().sliding(size, step=step).map(Set)
 
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
-        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp)
+        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).map(Set)
 
     def take(self, n):
-        return self.iter().take(n)
+        return self.iter().take(n).set()
 
     def take_while(self, predicate=Unset):
-        return self.iter().take_while(predicate=predicate)
+        return self.iter().take_while(predicate=predicate).set()
 
     def timestamp(self, clock=time.time):
-        return self.iter().timestamp(clock=clock)
+        return self.iter().timestamp(clock=clock).set()
 
     if tqdm:
         def tqdm(self, *a, **kw):
@@ -1380,18 +1858,18 @@ class Set(set):
 
     def update(self, *s):
         set.update(self, *s)
-        return s
+        return self
 
     def zip(self, *others, strict=False):
-        return self.iter().zip(*others, strict=strict)
+        return self.iter().zip(*others, strict=strict).set()
 
     def zip_longest(self, *others, fillvalue=None):
-        return self.iter().zip_longest(*others, fillvalue=fillvalue)
+        return self.iter().zip_longest(*others, fillvalue=fillvalue).set()
 
 
 class Tuple(tuple):
     def __add__(self, other):
-        return Tuple(tuple.__add__(self, other))
+        return Tuple((*self, *other))
 
     def __mul__(self, other):
         return Tuple(tuple.__mul__(self, other))
@@ -1416,11 +1894,11 @@ class Tuple(tuple):
     def apply(self, f):
         return f(self)
 
-    def apply_and_iter(self, f):
-        return Iter(f(self))
+    def apply_and_wrap(self, f):
+        return wrap(f(self))
 
     def batch(self, size):
-        return self.iter().batch(size)
+        return self.iter().batch(size).tuple()
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1439,35 +1917,39 @@ class Tuple(tuple):
     def cycle(self):
         return self.iter().cycle()
 
+    def default_dict(self, default_factory):
+        return DefaultDict(default_factory).update(self)
+
     def dict(self):
         return Dict(self)
 
     def distinct(self, key=Unset):
-        return self.iter().distinct(key=key)
+        return self.iter().distinct(key=key).tuple()
 
     def do(self, f):
-        return self.iter().do(f)
+        self.for_each(f)
+        return self
 
     def drop(self, n):
         return self[n:]
 
     def drop_while(self, predicate):
-        return self.iter().drop_while(predicate)
+        return self.iter().drop_while(predicate).tuple()
 
     def enumerate(self, start=0):
-        return self.iter().enumerate(start=start)
+        return self.iter().enumerate(start=start).tuple()
 
     def filter(self, predicate=Unset):
-        return self.iter().filter(predicate=predicate)
+        return self.iter().filter(predicate=predicate).tuple()
 
     def first(self, predicate=Unset, default=Unset):
         return self.iter().first(predicate=predicate, default=default)
 
     def flat_map(self, f):
-        return self.iter().flat_map(f)
+        return self.iter().flat_map(f).tuple()
 
     def flatten(self):
-        return self.iter().flatten()
+        return self.iter().flatten().tuple()
 
     def fold(self, initial, f):
         return self.iter().fold(initial, f)
@@ -1482,7 +1964,7 @@ class Tuple(tuple):
         return self.iter().group_by(key=key)
 
     def intersperse(self, item):
-        return self.iter().intersperse(item)
+        return self.iter().intersperse(item).tuple()
 
     def iter(self):
         return Iter(self)
@@ -1494,13 +1976,13 @@ class Tuple(tuple):
         return List(self)
 
     def map(self, f):
-        return self.iter().map(f)
+        return self.iter().map(f).tuple()
 
     def map_to_keys(self, f):
         return self.iter().map_to_keys(f)
 
     def map_to_pairs(self, f):
-        return self.iter().map_to_pairs(f)
+        return self.iter().map_to_pairs(f).tuple()
 
     def map_to_values(self, f):
         return self.iter().map_to_values(f)
@@ -1518,7 +2000,7 @@ class Tuple(tuple):
         return self.iter().only(predicate=predicate)
 
     def partition(self, predicate=identity):
-        return self.iter().partition(predicate=predicate)
+        return wrap(self.iter().partition(predicate=predicate)).map(Tuple)
 
     def permutations(self, r=None):
         return self.iter().permutations(r)
@@ -1535,8 +2017,8 @@ class Tuple(tuple):
     def repeat(self, n=Unset):
         return self.iter().repeat(n=n)
 
-    def reverse(self):
-        return Tuple(reversed(self))
+    def reversed(self):
+        return reversed(self)
 
     def set(self):
         return Set(self)
@@ -1545,10 +2027,10 @@ class Tuple(tuple):
         return len(self)
 
     def sliding(self, size, step=1):
-        return self.iter().sliding(size, step=step)
+        return self.iter().sliding(size, step=step).tuple()
 
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
-        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp)
+        return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).tuple()
 
     def sorted(self, key=None, reverse=False):
         return Tuple(sorted(self, key=key, reverse=reverse))
@@ -1557,25 +2039,25 @@ class Tuple(tuple):
         return self[:n]
 
     def take_while(self, predicate=Unset):
-        return self.iter().take_while(predicate=predicate)
+        return self.iter().take_while(predicate=predicate).tuple()
 
     def timestamp(self, clock=time.time):
-        return self.iter().timestamp(clock=clock)
+        return self.iter().timestamp(clock=clock).tuple()
 
     if tqdm:
         def tqdm(self, *a, **kw):
             return self.iter().tqdm(*a, **kw)
 
     def transpose(self):
-        return self.iter().transpose()
+        return self.iter().transpose().tuple()
 
     def tuple(self):
-        return Tuple(self)
+        return self
 
     unzip = transpose
 
     def zip(self, *others, strict=False):
-        return self.iter().zip(*others, strict=strict)
+        return self.iter().zip(*others, strict=strict).tuple()
 
     def zip_longest(self, *others, fillvalue=None):
-        return self.iter().zip_longest(*others, fillvalue=fillvalue)
+        return self.iter().zip_longest(*others, fillvalue=fillvalue).tuple()
