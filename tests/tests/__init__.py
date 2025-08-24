@@ -79,6 +79,14 @@ def by_iter_eq(cls, method):
     def test(expected, items, *a, **kw):
         actual = tuple(getattr(cls(items), method)(*a, **kw))
         expected = tuple(expected)
-        assert iter_eq(actual, expected), (actual, expected)
+        assert actual == expected, (actual, expected)
+
+    return test
+
+
+def by_member_eq(cls, member):
+    def test(expected, items):
+        actual = getattr(cls(items), member)
+        assert actual == expected
 
     return test
