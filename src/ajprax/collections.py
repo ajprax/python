@@ -47,38 +47,25 @@ def timestamp(clock=time.time):
 
 
 def wrap(it):
-    match it:
-        # wrap is not a copy constructor, return already wrapped values unchanged
-        case (DefaultDict()
-              | Dict()
-              | DictKeys()
-              | DictValues()
-              | DictKeys()
-              | DictValues()
-              | Iter()
-              | List()
-              | Range()
-              | Set()
-              | Tuple()):
-            return it
-        case defaultdict():
-            return DefaultDict(it.default_factory).update(it)
-        case dict():
-            return Dict(it)
-        case dict_keys():
-            return DictKeys(it)
-        case dict_values():
-            return DictValues(it)
-        case list():
-            return List(it)
-        case set():
-            return Set(it)
-        case range():
-            return Range(it)
-        case tuple():
-            return Tuple(it)
-        case _:
-            return Iter(it)
+    return {
+        DefaultDict: identity,
+        Dict: identity,
+        DictKeys: identity,
+        DictValues: identity,
+        Iter: identity,
+        List: identity,
+        Range: identity,
+        Set: identity,
+        Tuple: identity,
+        defaultdict: lambda dd: DefaultDict(dd.default_factory).update(dd),
+        dict: Dict,
+        dict_keys: DictKeys,
+        dict_values: DictValues,
+        list: List,
+        set: Set,
+        range: Range,
+        tuple: Tuple,
+    }.get(type(it), Iter)(it)
 
 
 class Dict(dict):
@@ -316,7 +303,6 @@ class DictKeys:
         self._keys = keys
 
     def __eq__(self, other):
-        print("DictKeys.__eq__", self, other)
         if isinstance(other, DictKeys):
             other = other._keys
         return self._keys == other
