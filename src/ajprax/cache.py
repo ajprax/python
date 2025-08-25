@@ -30,7 +30,7 @@ def cache(*, key=Unset, method=False):
         if len(signature(f).parameters) == method:
             require(key is Unset, "cannot use custom key function for function with no arguments")
             return Singleton(f, method)
-        return CacheManager(f, key, method)
+        return Cache(f, key, method)
 
     return decorator
 
@@ -51,32 +51,20 @@ class Singleton:
         self.name = f"_{f.__name__}_singleton"
 
     def __get__(self, instance, owner=None):
-        return partial(self, instance)
-
-    def create_cell(self, obj):
-        setattr(obj, self.name, Cell())
-
-    def get_cell(self, obj):
-        return getattr(obj, self.name, Unset)
+        return self if instance is None else partial(self, instance)
 
     def get_or_create_cell(self, obj):
-        if self.get_cell(obj) is Unset:
+        def get(obj):
+            return getattr(obj, self.name, None)
+
+        if not get(obj):
             with self.creation_lock:
-                if self.get_cell(obj) is Unset:
-                    self.create_cell(obj)
-        return self.get_cell(obj)
+                if not get(obj):
+                    setattr(obj, self.name, Cell())
+        return get(obj)
 
     def __call__(self, *a, **kw):
-        if self.method:
-            # Cls.method(instance) results in an extra None inserted by __get__
-            # instance.method() won't have the None
-            # the first positional argument of an instance method will never actually be None
-            if len(a) == 2 and a[0] is None:
-                a = a[1],
-            require(len(a) == 1 and not kw, a=a, kw=kw)
-
         cell = self.get_or_create_cell(a[0] if self.method else self)
-
         if cell.value is Unset:
             with cell.lock:
                 if cell.value is Unset:
@@ -92,7 +80,7 @@ class DefaultKey:
         return *a, *(kw[param] for param in self.parameters if param in kw)
 
 
-class Ongoing(Condition):
+class InProgress(Condition):
     """
     Inserted into a cache before starting to generate the value so that concurrent callers can wait for the value
     instead of redundantly calling the cached function.
@@ -101,7 +89,7 @@ class Ongoing(Condition):
     """
 
 
-class CacheManager:
+class Cache:
     def __init__(self, f, key, method):
         self.f = f
         self.signature = signature(f)
@@ -110,45 +98,35 @@ class CacheManager:
         self.name = f"_{f.__name__}_cache"
         self.creation_lock = Lock()
 
-    def create_cell(self, obj):
-        setattr(obj, self.name, Cell({}))
-
-    def get_cell(self, obj):
-        return getattr(obj, self.name, Unset)
-
     def get_or_create_cell(self, obj):
-        if self.get_cell(obj) is Unset:
+        def get(obj):
+            return getattr(obj, self.name, None)
+
+        if not get(obj):
             with self.creation_lock:
-                if self.get_cell(obj) is Unset:
-                    self.create_cell(obj)
-        return self.get_cell(obj)
+                if not get(obj):
+                    setattr(obj, self.name, Cell({}))
+        return get(obj)
 
     def __get__(self, instance, owner=None):
-        return partial(self, instance)
+        return self if instance is None else partial(self, instance)
 
     def __call__(self, *a, **kw):
-        # Cls.method(instance, ...) results in an extra None inserted by __get__
-        # instance.method(...) won't have the None
-        # the first positional argument of an instance method will never actually be None
-        if self.method and a[0] is None:
-            a = a[1:]
-
-        cell = self.get_or_create_cell(a[0] if self.method else self)
-
         args = self.signature.bind(*a, **kw)
         args.apply_defaults()
         key = self.key(*args.args[self.method:], **args.kwargs)
 
+        cell = self.get_or_create_cell(a[0] if self.method else self)
         with cell.lock:
             if key in cell.value:
                 value = cell.value[key]
-                if isinstance(value, Ongoing):
+                if isinstance(value, InProgress):
                     with value:
                         value.wait()
                         value = cell.value[key]
                 return value
 
-            condition = Ongoing(cell.lock)
+            condition = InProgress(cell.lock)
             cell.value[key] = condition
 
         value = self.f(*args.args, **args.kwargs)
