@@ -2,16 +2,12 @@ from collections import defaultdict
 from operator import add, mul, itemgetter
 from unittest.mock import patch
 
-import pytest
-
-from ajprax.collections import DefaultDict, Dict, Iter, List, Range, Set, Tuple, count, repeated, repeatedly, timestamp, \
-    wrap, DictKeys, DictValues
+from ajprax.collections import DefaultDict, Dict, DictKeys, DictValues, Iter, List, Range, Set, Tuple, count, \
+    repeated, repeatedly, timestamp, wrap
 from ajprax.hof import identity, t
 from ajprax.require import RequirementException
-from tests import by_iter_eq, by_eq, double, is_even, is_odd, less_than, should_raise, tower, greater_than, iter_eq, \
-    key_less_than, key_is_odd, double_key, double_value, by_member_eq
-
-skip = pytest.mark.skip
+from tests import by_eq, by_iter_eq, by_member_eq, double, double_key, double_value, greater_than, is_even, is_odd, \
+    iter_eq, key_is_odd, key_less_than, less_than, should_raise, tower
 
 
 def test_coverage():
@@ -2347,6 +2343,16 @@ class TestList:
         test(["a", "a", "a", "a"], ["a"], 4)
         test([], [1, 2, 3], 0)
         test([], [1, 2], -1)
+
+    def test___reversed__(self):
+        test = by_iter_eq(List, "__reversed__")
+
+        test([], [])
+        test([1], [1])
+        test([2], [2])
+        test([2, 1], [1, 2])
+        test([1, 2], [2, 1])
+        test([3, 2, 1], [1, 2, 3])
 
     def test___rmul__(self):
         def test(expected, n, items):
@@ -4858,6 +4864,16 @@ class TestTuple:
         test(["a", "a", "a", "a"], ["a"], 4)
         test([], [1, 2, 3], 0)
         test([], [1, 2], -1)
+
+    def test___reversed__(self):
+        test = by_iter_eq(Tuple, "__reversed__")
+
+        test([], [])
+        test([1], [1])
+        test([2], [2])
+        test([2, 1], [1, 2])
+        test([1, 2], [2, 1])
+        test([3, 2, 1], [1, 2, 3])
 
     def test___rmul__(self):
         def test(expected, n, items):

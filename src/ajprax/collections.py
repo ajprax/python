@@ -1179,6 +1179,9 @@ class List(list):
         # TODO: avoid copying?
         return List(list.__mul__(self, other))
 
+    def __reversed__(self):
+        return Iter(list.__reversed__(self))
+
     def __rmul__(self, other):
         return List(list.__rmul__(self, other))
 
@@ -1857,12 +1860,6 @@ class Tuple(tuple):
     def __add__(self, other):
         return Tuple((*self, *other))
 
-    def __mul__(self, other):
-        return Tuple(tuple.__mul__(self, other))
-
-    def __rmul__(self, other):
-        return Tuple(tuple.__rmul__(self, other))
-
     def __getitem__(self, item):
         if isinstance(item, int):
             return tuple.__getitem__(self, item)
@@ -1870,6 +1867,15 @@ class Tuple(tuple):
 
     def __iter__(self):
         return Iter(tuple.__iter__(self))
+
+    def __mul__(self, other):
+        return Tuple(tuple.__mul__(self, other))
+
+    def __reversed__(self):
+        return Iter(reversed(tuple(self)))
+
+    def __rmul__(self, other):
+        return Tuple(tuple.__rmul__(self, other))
 
     def all(self, key=Unset):
         return self.iter().all(key=key)
