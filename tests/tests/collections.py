@@ -1956,6 +1956,20 @@ class TestIter:
         test(1, [1], predicate=is_odd)
         test(1, [1, 2], predicate=is_odd)
         test(1, [2, 1], predicate=is_odd)
+        test(None, [], empty_default=None)
+        test(1, [], empty_default=1)
+        test(1, [1], empty_default=None)
+        test(None, [2], predicate=is_odd, empty_default=None)
+        with should_raise(ValueError, "too many items found"):
+            Iter([1, 1]).only(empty_default=None)
+        with should_raise(ValueError, "too many items found"):
+            Iter([1, 1]).only(predicate=is_odd, empty_default=None)
+        with should_raise(ValueError, "no item found"):
+            Iter().only(overfull_default=None)
+        with should_raise(ValueError, "no item found"):
+            Iter([2]).only(predicate=is_odd, overfull_default=None)
+        test(None, [1, 2], overfull_default=None)
+        test(1, [1], overfull_default=None)
 
     def test_partition(self):
         def test(expected, items, *a, **kw):

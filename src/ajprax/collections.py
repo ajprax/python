@@ -221,8 +221,8 @@ class Dict(dict):
     def min_max(self, key=None, default=Unset):
         return self.items().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.items().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.items().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate):
         return wrap(self.items().partition(predicate=predicate)).map(Dict)
@@ -425,8 +425,8 @@ class DictKeys:
     def min_max(self, key=None, default=Unset):
         return self.iter().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.iter().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.iter().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate=Unset):
         return wrap(self.iter().partition(predicate=predicate)).map(Set)
@@ -610,8 +610,8 @@ class DictValues:
     def min_max(self, key=None, default=Unset):
         return self.iter().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.iter().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.iter().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate=identity):
         return wrap(self.iter().partition(predicate=predicate)).map(Tuple)
@@ -970,14 +970,20 @@ class Iter:
     def next(self):
         return next(self)
 
-    def only(self, predicate=Unset):
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
         if predicate is not Unset:
             self = self.filter(predicate=predicate)
 
-        require(self.has_next(), "no item found", _exc=ValueError)
-        item = self.next()
-        require(not self.has_next(), "too many items found", _exc=ValueError)
-        return item
+        if self.has_next():
+            item = self.next()
+            if self.has_next():
+                if overfull_default is Unset:
+                    raise ValueError("too many items found")
+                return overfull_default
+            return item
+        if empty_default is Unset:
+            raise ValueError("no item found")
+        return empty_default
 
     def partition(self, predicate=identity):
         class Trues:
@@ -1323,8 +1329,8 @@ class List(list):
     def min_max(self, key=None, default=Unset):
         return self.iter().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.iter().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.iter().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate=identity):
         return wrap(self.iter().partition(predicate=predicate)).map(List)
@@ -1565,8 +1571,8 @@ class Range:
     def min_max(self, key=None, default=Unset):
         return self.iter().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.iter().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.iter().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate=Unset):
         return self.iter().partition(predicate=predicate)
@@ -1792,8 +1798,8 @@ class Set(set):
     def min_max(self, key=None, default=Unset):
         return self.iter().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.iter().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.iter().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate=Unset):
         return wrap(self.iter().partition(predicate=predicate)).map(Set)
@@ -1989,8 +1995,8 @@ class Tuple(tuple):
     def min_max(self, key=None, default=Unset):
         return self.iter().min_max(key=key, default=default)
 
-    def only(self, predicate=Unset):
-        return self.iter().only(predicate=predicate)
+    def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
+        return self.iter().only(predicate=predicate, empty_default=empty_default, overfull_default=overfull_default)
 
     def partition(self, predicate=identity):
         return wrap(self.iter().partition(predicate=predicate)).map(Tuple)
