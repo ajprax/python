@@ -548,6 +548,9 @@ class TestDict:
         test(dict([a, b]), [a, b], less_than(2))
         test(dict([b, a]), [b, a], less_than(2))
         test(dict([a, b]), [a, b, c], less_than(2))
+        test(dict([]), [a])
+        test(dict([b]), [b])
+        test(dict([b]), [a, b])
 
     def test_filter_values(self):
         test = by_eq(Dict, "filter_values")
@@ -566,6 +569,7 @@ class TestDict:
         test(dict([a, b]), [a, b], less_than("c"))
         test(dict([b, a]), [b, a], less_than("c"))
         test(dict([a, b]), [a, b, c], less_than("c"))
+        test(dict([(4, True)]), [(1, False), (2, None), (3, ""), (4, True)])
 
     def test_first(self):
         test = by_eq(Dict, "first")
@@ -1674,7 +1678,13 @@ class TestIter:
     def test_filter(self):
         test = by_iter_eq(Iter, "filter")
 
+        test([], [])
+        test([], [0])
+        test([1], [1])
+        test([1, 2], [0, 1, 2])
+        test([1, 2, 3], [1, 2, 3])
         test([], [], is_even)
+        test([0], [0], is_even)
         test([], [1], is_even)
         test([2], [1, 2], is_even)
         test([2], [1, 2, 3], is_even)
@@ -2662,6 +2672,9 @@ class TestList:
     def test_filter(self):
         test = by_iter_eq(List, "filter")
 
+        test([], [])
+        test([], [False, 0, ""])
+        test([True], [False, 0, "", True])
         test([], [], lambda x: x > 0)
         test([], [1, 2, 3], lambda x: x > 5)
         test([1, 2, 3], [1, 2, 3], lambda x: x > 0)

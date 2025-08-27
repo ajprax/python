@@ -141,13 +141,14 @@ class Dict(dict):
         return self.items().enumerate(start=start)
 
     def filter(self, predicate):
-        return self.items().filter(predicate).dict()
+        # predicate is required because 2-tuples are always truthy
+        return self.items().filter(predicate=predicate).dict()
 
-    def filter_keys(self, predicate):
-        return self.items().filter(t(lambda k, v: predicate(k))).dict()
+    def filter_keys(self, predicate=bool):
+        return self.filter(predicate=t(lambda k, v: predicate(k))).dict()
 
-    def filter_values(self, predicate):
-        return self.items().filter(t(lambda k, v: predicate(v))).dict()
+    def filter_values(self, predicate=bool):
+        return self.filter(predicate=t(lambda k, v: predicate(v))).dict()
 
     def first(self, predicate=Unset, default=Unset):
         return self.items().first(predicate=predicate, default=default)
@@ -370,7 +371,7 @@ class DictKeys:
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start)
 
-    def filter(self, predicate=Unset):
+    def filter(self, predicate=bool):
         return self.iter().filter(predicate=predicate).set()
 
     def first(self, predicate=Unset, default=Unset):
@@ -552,7 +553,7 @@ class DictValues:
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start).tuple()
 
-    def filter(self, predicate=Unset):
+    def filter(self, predicate=bool):
         return self.iter().filter(predicate=predicate).tuple()
 
     def first(self, predicate=Unset, default=Unset):
@@ -822,7 +823,7 @@ class Iter:
     def enumerate(self, start=0):
         return Iter(enumerate(self, start))
 
-    def filter(self, predicate):
+    def filter(self, predicate=bool):
         def gen():
             for item in self:
                 if predicate(item):
@@ -835,7 +836,7 @@ class Iter:
             if predicate is Unset:
                 return self.next()
             else:
-                return self.filter(predicate).next()
+                return self.filter(predicate=predicate).next()
         except StopIteration:
             if default is Unset:
                 raise
@@ -905,7 +906,7 @@ class Iter:
 
     def last(self, predicate=Unset, default=Unset):
         if predicate is not Unset:
-            self = self.filter(predicate)
+            self = self.filter(predicate=predicate)
         if self.has_next():
             for item in self:
                 pass
@@ -971,7 +972,7 @@ class Iter:
 
     def only(self, predicate=Unset):
         if predicate is not Unset:
-            self = self.filter(predicate)
+            self = self.filter(predicate=predicate)
 
         require(self.has_next(), "no item found", _exc=ValueError)
         item = self.next()
@@ -1261,7 +1262,7 @@ class List(list):
         list.extend(self, iterable)
         return self
 
-    def filter(self, predicate=Unset):
+    def filter(self, predicate=bool):
         return self.iter().filter(predicate=predicate).list()
 
     def first(self, predicate=Unset, default=Unset):
@@ -1507,8 +1508,8 @@ class Range:
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start)
 
-    def filter(self, predicate):
-        return self.iter().filter(predicate)
+    def filter(self, predicate=bool):
+        return self.iter().filter(predicate=predicate)
 
     def first(self, predicate=Unset, default=Unset):
         return self.iter().first(predicate=predicate, default=default)
@@ -1736,7 +1737,7 @@ class Set(set):
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start).set()
 
-    def filter(self, predicate=Unset):
+    def filter(self, predicate=bool):
         return self.iter().filter(predicate=predicate).set()
 
     def first(self, predicate=Unset, default=Unset):
@@ -1931,7 +1932,7 @@ class Tuple(tuple):
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start).tuple()
 
-    def filter(self, predicate=Unset):
+    def filter(self, predicate=bool):
         return self.iter().filter(predicate=predicate).tuple()
 
     def first(self, predicate=Unset, default=Unset):
