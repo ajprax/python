@@ -130,7 +130,10 @@ class Cache:
             cell.value[key] = condition
 
         value = self.f(*args.args, **args.kwargs)
-        cell.value[key] = value
         with cell.lock:
-            condition.notify()
+            # it's important to set this value under the lock to avoid a race condition where a concurrent caller
+            # gets the InProgress from the dict before overwrite it, but waits on it after we notify_all.
+            # in short, all reads and writes to the dict should be under the lock.
+            cell.value[key] = value
+            condition.notify_all()
         return value
