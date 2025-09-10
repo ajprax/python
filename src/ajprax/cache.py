@@ -6,7 +6,7 @@ from ajprax.require import require
 from ajprax.sentinel import Unset
 
 
-def cache(*, key=Unset, method=False):
+def cache(f=None, *, key=Unset, method=False):
     """
     Major differences from functools.cache:
     - Cached function will not be called more than once for the same key, even if a second call happens before the
@@ -25,6 +25,8 @@ def cache(*, key=Unset, method=False):
 
     Automatically optimizes implementation when used to create a singleton.
     """
+    if f is not None:
+        return cache(key=key, method=method)(f)
 
     def decorator(f):
         if len(signature(f).parameters) == method:

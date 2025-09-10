@@ -44,6 +44,14 @@ class TestCache:
 
         self._test_default_key(f)
 
+    def test_function_no_call(self):
+        @cache
+        def f(a, b):
+            self.count += 1
+            return [a] * b
+
+        self._test_default_key(f)
+
     def test_function_custom(self):
         @cache(key=add)
         def f(a, b):
@@ -220,6 +228,16 @@ class TestCache:
 
         self._test_default_key(C.f)
 
+    def test_staticmethod_no_call(self):
+        class C:
+            @staticmethod
+            @cache
+            def f(a, b):
+                self.count += 1
+                return [a] * b
+
+        self._test_default_key(C.f)
+
     def test_staticmethod_custom(self):
         class C:
             @staticmethod
@@ -234,6 +252,21 @@ class TestCache:
         class C:
             @staticmethod
             @cache()
+            def f(a, b):
+                self.count += 1
+                return [a] * b
+
+        self._test_default_key(C().f)
+
+        # the cache should live with the class
+        count = self.count
+        C.f(1, 2)
+        assert self.count == count
+
+    def test_staticmethod_via_instance_no_call(self):
+        class C:
+            @staticmethod
+            @cache
             def f(a, b):
                 self.count += 1
                 return [a] * b
@@ -264,6 +297,24 @@ class TestCache:
         class C:
             @staticmethod
             @cache()
+            def f(a, b):
+                self.count += 1
+                return [a] * b
+
+        class D(C):
+            pass
+
+        self._test_default_key(D.f)
+
+        # for static methods, the cache is shared with subclasses
+        count = self.count
+        C.f(1, 2)
+        assert self.count == count
+
+    def test_staticmethod_subclass_no_call(self):
+        class C:
+            @staticmethod
+            @cache
             def f(a, b):
                 self.count += 1
                 return [a] * b
@@ -314,6 +365,24 @@ class TestCache:
         C.f(1, 2)
         assert self.count == count
 
+    def test_staticmethod_subclass_via_instance_no_call(self):
+        class C:
+            @staticmethod
+            @cache
+            def f(a, b):
+                self.count += 1
+                return [a] * b
+
+        class D(C):
+            pass
+
+        self._test_default_key(D().f)
+
+        # for static methods, the cache is shared with subclasses
+        count = self.count
+        C.f(1, 2)
+        assert self.count == count
+
     def test_staticmethod_subclass_via_instance_custom(self):
         class C:
             @staticmethod
@@ -334,6 +403,25 @@ class TestCache:
 
     def test_default_values(self):
         @cache()
+        def f(a, b=2):
+            self.count += 1
+            return [a] * b
+
+        def test(expected_count, expected_value, f, *a, **kw):
+            actual_value = f(*a, **kw)
+            actual_count = self.count
+            assert actual_value == expected_value
+            assert actual_count == expected_count
+
+        self.count = 0
+        test(1, [1, 1], f, 1)
+        test(1, [1, 1], f, 1)
+        test(1, [1, 1], f, a=1)
+        test(2, [1, 1, 1], f, 1, 3)
+        test(3, [2], f, 2, 1)
+
+    def test_default_values_no_call(self):
+        @cache
         def f(a, b=2):
             self.count += 1
             return [a] * b
