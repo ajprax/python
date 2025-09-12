@@ -1,7 +1,8 @@
 from datetime import datetime, timezone
+from threading import Thread, Event
 
 from ajprax.collections import Iter
-from ajprax.logging import LEVEL_NAME, Logger, Log, INFO
+from ajprax.logging import LEVEL_NAME, Logger, Log, INFO, WARN
 
 
 class TestLog:
@@ -44,3 +45,85 @@ class TestLog:
                 keywords,
                 exception,
             )
+
+    def test_context_level_prevents(self):
+        def a():
+            with log.context_level(WARN):
+                bevent.set()
+                log.info("a")
+                aevent.wait()
+
+        def b():
+            bevent.wait()
+            log.info("b")
+            aevent.set()
+
+        def test(l):
+            assert l.message == "b"
+
+        log = Logger()
+        log.subscribe(test)
+
+        aevent = Event()
+        bevent = Event()
+        athread = Thread(target=a)
+        bthread = Thread(target=b)
+        athread.start()
+        bthread.start()
+        athread.join()
+        bthread.join()
+
+    def test_context_level_allows(self):
+        def a():
+            with log.context_level(INFO):
+                bevent.set()
+                log.info("a")
+                aevent.wait()
+
+        def b():
+            bevent.wait()
+            log.info("b")
+            aevent.set()
+
+        def test(l):
+            assert l.message == "a"
+
+        log = Logger()
+        log.subscribe(test)
+        log.level = WARN
+
+        aevent = Event()
+        bevent = Event()
+        athread = Thread(target=a)
+        bthread = Thread(target=b)
+        athread.start()
+        bthread.start()
+        athread.join()
+        bthread.join()
+
+    def test_context_kwargs(self):
+        def a():
+            with log.context_kwargs(a=True):
+                bevent.set()
+                aevent.wait()
+
+        def b():
+            bevent.wait()
+            log.info(b=True)
+            aevent.set()
+
+        def test(l):
+            assert "a" not in l.keywords
+            assert "b" in l.keywords
+
+        log = Logger()
+        log.subscribe(test)
+
+        aevent = Event()
+        bevent = Event()
+        athread = Thread(target=a)
+        bthread = Thread(target=b)
+        athread.start()
+        bthread.start()
+        athread.join()
+        bthread.join()

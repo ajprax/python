@@ -1,6 +1,7 @@
 import sys
 import traceback
 from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
@@ -56,12 +57,31 @@ class Log:
 class Logger(Events):
     def __init__(self):
         Events.__init__(self)
-        self.level = INFO
+        self._global_level = INFO
+        self._context_level = ContextVar("level", default=None)
+        self._kwargs = ContextVar("kwargs", default={})
         self.subscribe(print)
 
-    def _log(self, _level, _message, _exception=False, **kwargs):
+    @property
+    def level(self):
+        context_level = self._context_level.get()
+        if context_level is None:
+            return self._global_level
+        return context_level
+
+    @level.setter
+    def level(self, level):
+        self._global_level = level
+
+    def _log(self, _level, _message, _exception, **kwargs):
         if _level >= self.level:
-            self.send(Log(datetime.now(timezone.utc), _level, _message, kwargs, _exception))
+            self.send(Log(
+                datetime.now(timezone.utc),
+                _level,
+                _message,
+                {**self._kwargs.get(), **kwargs},
+                _exception,
+            ))
 
     def trace(self, _message="", _exception=False, **kwargs):
         self._log(TRACE, _message, _exception, **kwargs)
@@ -82,13 +102,20 @@ class Logger(Events):
         self._log(FATAL, _message, _exception, **kwargs)
 
     @contextmanager
-    def temporary_level(self, level):
-        old = self.level
-        self.level = level
+    def context_level(self, level):
+        token = self._context_level.set(level)
         try:
             yield
         finally:
-            self.level = old
+            self._context_level.reset(token)
+
+    @contextmanager
+    def context_kwargs(self, **kw):
+        token = self._kwargs.set(kw)
+        try:
+            yield
+        finally:
+            self._kwargs.reset(token)
 
 
 log = Logger()
