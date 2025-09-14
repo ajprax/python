@@ -1,3 +1,7 @@
+from contextlib import contextmanager
+from os import remove
+from shutil import copy, move
+
 from ajprax.collections import Iter
 from ajprax.require import require
 
@@ -5,6 +9,21 @@ try:
     import crcmod
 except ImportError:
     crcmod = False
+
+
+@contextmanager
+def backup(filename, backup_filename=None):
+    if backup_filename is None:
+        backup_filename = filename + ".backup"
+
+    copy(filename, backup_filename)
+    try:
+        yield
+    except:
+        move(backup_filename, filename)
+        raise
+    else:
+        remove(backup_filename)
 
 
 def contents(filename, binary=False, chunk_size=4096):

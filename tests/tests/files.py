@@ -1,12 +1,43 @@
 from base64 import b64encode
 from os import path
 
-from ajprax.files import contents, crc32c, md5, sha1, sha256
+from ajprax.files import backup, contents, crc32c, md5, sha1, sha256
 from tests import iter_eq
 
 
 def asset(name):
     return path.join(path.dirname(__file__), "assets", name)
+
+
+def test_backup():
+    def read():
+        return "".join(contents(asset("backup")))
+
+    def write(value):
+        with open(asset("backup"), "w") as f:
+            f.write(value)
+
+    assert not path.exists(asset("backup") + ".backup")
+    with backup(asset("backup")):
+        assert path.exists(asset("backup") + ".backup")
+    assert not path.exists(asset("backup") + ".backup")
+
+    try:
+        try:
+            with backup(asset("backup")):
+                write("new")
+                assert read() == "new"
+                raise Exception
+        except Exception:
+            assert read() == "original"
+
+        with backup(asset("backup")):
+            with open(asset("backup"), "w") as f:
+                f.write("new")
+            assert read() == "new"
+        assert read() == "new"
+    finally:
+        write("original")
 
 
 def test_contents():
