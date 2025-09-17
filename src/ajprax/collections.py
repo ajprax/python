@@ -84,8 +84,8 @@ class Dict(dict):
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        return self.items().batch(size).map(Dict)
+    def batch(self, size, weight=Unset, strict=False):
+        return self.items().batch(size, weight=weight, strict=strict).map(Dict)
 
     def chain(self, *its):
         return self.items().chain(*its)
@@ -131,8 +131,8 @@ class Dict(dict):
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return self.items().drop(n).dict()
+    def drop(self, n, weight=Unset):
+        return self.items().drop(n, weight=weight).dict()
 
     def drop_while(self, predicate):
         return self.items().drop_while(predicate).dict()
@@ -255,8 +255,8 @@ class Dict(dict):
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
         return self.items().sliding_by_timestamp(size, step=step, stamp=stamp).map(Dict)
 
-    def take(self, n):
-        return self.items().take(n).dict()
+    def take(self, n, weight=Unset):
+        return self.items().take(n, weight=weight).dict()
 
     def take_while(self, predicate=Unset):
         return self.items().take_while(predicate=predicate).dict()
@@ -329,8 +329,8 @@ class DictKeys:
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        return self.iter().batch(size).map(Set)
+    def batch(self, size, weight=Unset, strict=False):
+        return self.iter().batch(size, weight=weight, strict=strict).map(Set)
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -362,8 +362,8 @@ class DictKeys:
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return self.iter().drop(n).set()
+    def drop(self, n, weight=Unset):
+        return self.iter().drop(n, weight=weight).set()
 
     def drop_while(self, predicate):
         return self.iter().drop_while(predicate).set()
@@ -458,8 +458,8 @@ class DictKeys:
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
         return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).map(Set)
 
-    def take(self, n):
-        return self.iter().take(n).set()
+    def take(self, n, weight=Unset):
+        return self.iter().take(n, weight=weight).set()
 
     def take_while(self, predicate=Unset):
         return self.iter().take_while(predicate=predicate).set()
@@ -511,8 +511,8 @@ class DictValues:
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        return self.iter().batch(size).tuple()
+    def batch(self, size, weight=Unset, strict=False):
+        return self.iter().batch(size, weight=weight, strict=strict).tuple()
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -544,8 +544,8 @@ class DictValues:
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return self.iter().drop(n)
+    def drop(self, n, weight=Unset):
+        return self.iter().drop(n, weight=weight)
 
     def drop_while(self, predicate):
         return self.iter().drop_while(predicate).tuple()
@@ -646,8 +646,8 @@ class DictValues:
     def sorted(self, key=None, reverse=False):
         return Tuple(sorted(self, key=key, reverse=reverse))
 
-    def take(self, n):
-        return self.iter().take(n)
+    def take(self, n, weight=Unset):
+        return self.iter().take(n, weight=weight)
 
     def take_while(self, predicate=Unset):
         return self.iter().take_while(predicate=predicate).tuple()
@@ -726,24 +726,46 @@ class Iter:
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
+    def batch(self, size, weight=Unset, strict=False):
         """
-        :param size: max number of items in each batch. the last batch may have fewer items if there are not enough to
-                     fill it
+        :param size: Number of items (or total weight of items) in each batch.
+        :param weight: Optional function to weigh items and batch by total weight.
+        :param strict: If True, raise if an item's weight exceeds the batch size. Only allowed if weight is provided.
         """
         require(size > 0, size=size)
+        if strict:
+            require(weight is not Unset, "strict batch size has no meaning without weight function")
 
-        try:
-            from itertools import batched
-            return Iter(batched(self, size)).map(Tuple)
-        except ImportError:
-            return (
-                self.enumerate()
-                .apply_and_wrap(functools.partial(itertools.groupby, key=t(lambda i, _: i // size)))
-                .map(itemgetter(1))
-                .map(lambda batch: map(itemgetter(1), batch))
-                .map(Tuple)
-            )
+        if weight is Unset:
+            try:
+                from itertools import batched
+                return Iter(batched(self, size)).map(Tuple)
+            except ImportError:
+                return (
+                    self.enumerate()
+                    .apply_and_wrap(functools.partial(itertools.groupby, key=t(lambda i, _: i // size)))
+                    .map(itemgetter(1))
+                    .map(lambda batch: map(itemgetter(1), batch))
+                    .map(Tuple)
+                )
+
+        def gen():
+            while self.has_next():
+                batch = Tuple(self.take(size, weight=weight))
+                if batch:
+                    yield batch
+                else:
+                    require(
+                        not strict,
+                        "found single item heavier than batch size",
+                        size=size,
+                        weight=weight,
+                        item_weight=weight(self.peek()),
+                    )
+                    # the next item is larger than the batch size, so it gets a whole batch to itself
+                    yield Tuple((self.next(),))
+
+        return Iter(gen())
 
     def chain(self, *its):
         return Iter(itertools.chain(self, *its))
@@ -802,20 +824,27 @@ class Iter:
 
         return Iter(gen())
 
-    def drop(self, n):
-        if n >= 0:
-            for _ in range(n):
-                try:
-                    self.next()
-                except StopIteration:
-                    break
-            return self
+    def drop(self, n, weight=Unset):
+        if weight is Unset:
+            if n >= 0:
+                for _ in range(n):
+                    try:
+                        self.next()
+                    except StopIteration:
+                        break
+                return self
+            else:
+                window = deque(self.take(-n))
+                while self.has_next():
+                    window.popleft()
+                    window.append(self.next())
+                return Iter(window)
         else:
-            window = deque(self.take(-n))
-            while self.has_next():
-                window.popleft()
-                window.append(self.next())
-            return Iter(window)
+            require(n >= 0, n=n)
+            total = 0
+            while self.has_next() and total < n:
+                total += weight(self.next())
+            return self
 
     def drop_while(self, predicate):
         return Iter(itertools.dropwhile(predicate, self))
@@ -1103,24 +1132,35 @@ class Iter:
 
         return Iter(gen())
 
-    def take(self, n):
-        if n >= 0:
-            def gen():
-                for _ in range(n):
+    def take(self, n, weight=Unset):
+        if weight is Unset:
+            if n >= 0:
+                def gen():
+                    for _ in range(n):
+                        try:
+                            yield self.next()
+                        except StopIteration:
+                            pass
+            else:
+                def gen():
                     try:
-                        yield self.next()
+                        windows = self.sliding(-n)
+                        _next = windows.next()[0]
+                        while windows.has_next():
+                            yield _next
+                            _next = windows.next()[0]
                     except StopIteration:
                         pass
         else:
+            require(n > 0, n=n)
+
             def gen():
-                try:
-                    windows = self.sliding(-n)
-                    _next = windows.next()[0]
-                    while windows.has_next():
-                        yield _next
-                        _next = windows.next()[0]
-                except StopIteration:
-                    pass
+                total = 0
+                while self.has_next():
+                    total += weight(self.peek())
+                    if total > n:
+                        return
+                    yield self.next()
 
         return Iter(gen())
 
@@ -1208,8 +1248,8 @@ class List(list):
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        return self.iter().batch(size).list()
+    def batch(self, size, weight=Unset, strict=False):
+        return self.iter().batch(size, weight=weight, strict=strict).list()
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1255,8 +1295,10 @@ class List(list):
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return self[n:]
+    def drop(self, n, weight=Unset):
+        if weight is Unset:
+            return self[n:]
+        return self.iter().drop(n, weight=weight).list()
 
     def drop_while(self, predicate):
         return self.iter().drop_while(predicate).list()
@@ -1376,8 +1418,10 @@ class List(list):
     def sorted(self, key=None, reverse=False):
         return List(sorted(self, key=key, reverse=reverse))
 
-    def take(self, n):
-        return self[:n]
+    def take(self, n, weight=Unset):
+        if weight is Unset:
+            return self[:n]
+        return self.iter().take(n, weight=weight).list()
 
     def take_while(self, predicate=Unset):
         return self.iter().take_while(predicate=predicate).list()
@@ -1467,21 +1511,24 @@ class Range:
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        def gen():
-            batch_step = self.step * size
-            start = self.start
-            stop = min(self.stop, self.start + batch_step)
-            if stop == self.stop:
-                yield Range(start, stop, self.step)
-            else:
-                while stop < self.stop:
+    def batch(self, size, weight=Unset, strict=False):
+        if weight is Unset:
+            def gen():
+                batch_step = self.step * size
+                start = self.start
+                stop = min(self.stop, self.start + batch_step)
+                if stop == self.stop:
                     yield Range(start, stop, self.step)
-                    start += batch_step
-                    stop = min(self.stop, stop + batch_step)
-                yield Range(start, stop, self.step)
+                else:
+                    while stop < self.stop:
+                        yield Range(start, stop, self.step)
+                        start += batch_step
+                        stop = min(self.stop, stop + batch_step)
+                    yield Range(start, stop, self.step)
 
-        return Iter(gen())
+            return Iter(gen())
+
+        return self.iter().batch(size, weight=weight, strict=strict)
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1504,8 +1551,10 @@ class Range:
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return Range(self._range[n:])
+    def drop(self, n, weight=Unset):
+        if weight is Unset:
+            return Range(self._range[n:])
+        return self.iter().drop(n, weight=weight)
 
     def drop_while(self, predicate):
         start = self.first(lambda n: not predicate(n), self.stop)
@@ -1618,8 +1667,10 @@ class Range:
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
         return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp)
 
-    def take(self, n):
-        return Range(self._range[:n])
+    def take(self, n, weight=Unset):
+        if weight is Unset:
+            return Range(self._range[:n])
+        return self.iter().take(n, weight=weight)
 
     def take_while(self, predicate=Unset):
         stop = self.first(lambda n: not predicate(n), self.stop)
@@ -1686,8 +1737,8 @@ class Set(set):
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        return self.iter().batch(size).map(Set)
+    def batch(self, size, weight=Unset, strict=False):
+        return self.iter().batch(size, weight=weight, strict=strict).map(Set)
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1734,8 +1785,8 @@ class Set(set):
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return self.iter().drop(n).set()
+    def drop(self, n, weight=Unset):
+        return self.iter().drop(n, weight=weight).set()
 
     def drop_while(self, predicate):
         return self.iter().drop_while(predicate).set()
@@ -1831,8 +1882,8 @@ class Set(set):
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
         return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).map(Set)
 
-    def take(self, n):
-        return self.iter().take(n).set()
+    def take(self, n, weight=Unset):
+        return self.iter().take(n, weight=weight).set()
 
     def take_while(self, predicate=Unset):
         return self.iter().take_while(predicate=predicate).set()
@@ -1896,8 +1947,8 @@ class Tuple(tuple):
     def apply_and_wrap(self, f):
         return wrap(f(self))
 
-    def batch(self, size):
-        return self.iter().batch(size).tuple()
+    def batch(self, size, weight=Unset, strict=False):
+        return self.iter().batch(size, weight=weight, strict=strict).tuple()
 
     def chain(self, *its):
         return self.iter().chain(*its)
@@ -1929,8 +1980,10 @@ class Tuple(tuple):
         self.for_each(f)
         return self
 
-    def drop(self, n):
-        return self[n:]
+    def drop(self, n, weight=Unset):
+        if weight is Unset:
+            return self[n:]
+        return self.iter().drop(n, weight=weight).tuple()
 
     def drop_while(self, predicate):
         return self.iter().drop_while(predicate).tuple()
@@ -2034,8 +2087,10 @@ class Tuple(tuple):
     def sorted(self, key=None, reverse=False):
         return Tuple(sorted(self, key=key, reverse=reverse))
 
-    def take(self, n):
-        return self[:n]
+    def take(self, n, weight=Unset):
+        if weight is Unset:
+            return self[:n]
+        return self.iter().take(n, weight=weight).tuple()
 
     def take_while(self, predicate=Unset):
         return self.iter().take_while(predicate=predicate).tuple()

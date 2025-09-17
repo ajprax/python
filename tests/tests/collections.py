@@ -215,6 +215,9 @@ class TestDict:
             test([{"a": 1}], [("a", 1)], i)
             test([{"a": 1, "b": 2}], [("a", 1), ("b", 2)], i)
 
+        items = [("a", 2), ("b", 1), ("c", 2)]
+        test([{"a": 2, "b": 1}, {"c": 2}], items, 3, weight=itemgetter(1))
+
     def test_chain(self):
         test = by_iter_eq(Dict, "chain")
 
@@ -476,6 +479,9 @@ class TestDict:
         test(dict([a, b, c]), [a, b, c], 0)
         test(dict([b, c]), [a, b, c], 1)
         test(dict([]), [a, b, c], 4)
+
+        weighted_items = [("a", 2), ("b", 1), ("c", 2)]
+        test(dict([("c", 2)]), weighted_items, 3, weight=itemgetter(1))
 
     def test_drop_while(self):
         test = by_eq(Dict, "drop_while")
@@ -1187,6 +1193,9 @@ class TestDict:
         test(dict([a, b]), [a, b], 2)
         test(dict([a, b]), [a, b, c], 2)
 
+        weighted_items = [("a", 2), ("b", 1), ("c", 2)]
+        test(dict([("a", 2), ("b", 1)]), weighted_items, 3, weight=itemgetter(1))
+
     def test_take_while(self):
         test = by_eq(Dict, "take_while")
 
@@ -1509,6 +1518,11 @@ class TestIter:
         for i in range(2, 5):
             test([(1, 2)], [1, 2], i)
         test([(1, 2), (3,)], [1, 2, 3], 2)
+        test([(2, 1), (2,)], [2, 1, 2], 3, weight=identity)
+        test([(4,), (1,)], [4, 1], 3, weight=identity)
+        test([(2, 1), (2,)], [2, 1, 2], 3, weight=identity, strict=True)
+        with should_raise(RequirementException):
+            test([(4,), (1,)], [4, 1], 3, weight=identity, strict=True)
 
     def test_chain(self):
         test = by_iter_eq(Iter, "chain")
@@ -1657,6 +1671,10 @@ class TestIter:
         test([2], [1, 2], -1)
         test([3], [1, 2, 3], -1)
         test([2, 3], [1, 2, 3], -2)
+        test([3], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            Iter([1, 2, 3]).drop(-1, weight=identity)
 
     def test_drop_while(self):
         test = by_iter_eq(Iter, "drop_while")
@@ -2197,6 +2215,11 @@ class TestIter:
             expected = items[:i]
             test(expected, items, i)
 
+        test([1, 2], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            Iter([1, 2, 3]).take(-1, weight=identity)
+
     def test_take_while(self):
         test = by_iter_eq(Iter, "take_while")
 
@@ -2455,6 +2478,7 @@ class TestList:
         test([(1, 2), (3,)], [1, 2, 3], 2)
         test([(1, 2, 3)], [1, 2, 3], 3)
         test([(1, 2, 3)], [1, 2, 3], 4)
+        test([(2, 1), (2,)], [2, 1, 2], 3, weight=identity)
 
     def test_chain(self):
         test = by_iter_eq(List, "chain")
@@ -2647,6 +2671,10 @@ class TestList:
         test([3], [1, 2, 3], 2)
         test([], [1, 2, 3], 3)
         test([], [1, 2, 3], 5)
+        test([3], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            List([1, 2, 3]).drop(-1, weight=identity)
 
     def test_drop_while(self):
         test = by_iter_eq(List, "drop_while")
@@ -3128,6 +3156,10 @@ class TestList:
         test([1, 2], [1, 2, 3], 2)
         test([1, 2, 3], [1, 2, 3], 3)
         test([1, 2, 3], [1, 2, 3], 5)
+        test([1, 2], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            List([1, 2, 3]).take(-1, weight=identity)
 
     def test_take_while(self):
         test = by_iter_eq(List, "take_while")
@@ -3369,6 +3401,10 @@ class TestRange:
         test([range(2), range(2, 3)], range(3), 2)
         test([range(1), range(1, 2), range(2, 3)], range(3), 1)
 
+        weighted = Range(range(1, 5)).batch(3, weight=identity)
+        assert isinstance(weighted, Iter)
+        assert iter_eq(weighted, [(1, 2), (3,), (4,)])
+
     def test_chain(self):
         test = by_iter_eq(Range, "chain")
 
@@ -3500,6 +3536,13 @@ class TestRange:
         test(range(2, 10, 2), range(0, 10, 2), 1)
         test(range(4, 10, 2), range(0, 10, 2), 2)
         test(range(10, 10, 2), range(0, 10, 2), 5)
+
+        weighted = Range(range(1, 6)).drop(5, weight=identity)
+        assert isinstance(weighted, Iter)
+        assert iter_eq(weighted, [4, 5])
+
+        with should_raise(RequirementException):
+            Range(range(5)).drop(-1, weight=identity)
 
     def test_drop_while(self):
         test = by_iter_eq(Range, "drop_while")
@@ -3947,6 +3990,13 @@ class TestRange:
         test(range(0, 4, 2), range(0, 10, 2), 2)
         test(range(0, 6, 2), range(0, 10, 2), 3)
 
+        weighted_take = Range(range(1, 6)).take(5, weight=identity)
+        assert isinstance(weighted_take, Iter)
+        assert iter_eq(weighted_take, [1, 2])
+
+        with should_raise(RequirementException):
+            Range(range(5)).take(-1, weight=identity)
+
     def test_take_while(self):
         test = by_iter_eq(Range, "take_while")
 
@@ -4187,6 +4237,7 @@ class TestSet:
         test([{1, 2}, {3}], [1, 2, 3], 2)
         test([{1, 2, 3}], [1, 2, 3], 3)
         test([{1, 2, 3}], [1, 2, 3], 4)
+        test([{1, 2}, {3}], [1, 2, 3], 4, weight=identity)
 
     def test_chain(self):
         test = by_iter_eq(Set, "chain")
@@ -4356,6 +4407,10 @@ class TestSet:
         test({3}, [1, 2, 3], 2)
         test(set(), [1, 2, 3], 3)
         test(set(), [1, 2, 3], 5)
+        test({3}, [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            Set([1, 2, 3]).drop(-1, weight=identity)
 
     def test_drop_while(self):
         test = by_eq(Set, "drop_while")
@@ -4735,6 +4790,10 @@ class TestSet:
         test([1, 2], [1, 2, 3], 2)
         test([1, 2, 3], [1, 2, 3], 3)
         test([1, 2, 3], [1, 2, 3], 5)
+        test([1, 2], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            Set([1, 2, 3]).take(-1, weight=identity)
 
     def test_take_while(self):
         test = by_iter_eq(Set, "take_while")
@@ -5120,6 +5179,10 @@ class TestTuple:
         test([3], [1, 2, 3], 2)
         test([], [1, 2, 3], 3)
         test([], [1, 2, 3], 5)
+        test([3], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            Tuple([1, 2, 3]).drop(-1, weight=identity)
 
     def test_drop_while(self):
         test = by_iter_eq(Tuple, "drop_while")
@@ -5545,6 +5608,10 @@ class TestTuple:
         test([1, 2], [1, 2, 3], 2)
         test([1, 2, 3], [1, 2, 3], 3)
         test([1, 2, 3], [1, 2, 3], 5)
+        test([1, 2], [1, 2, 3], 3, weight=identity)
+
+        with should_raise(RequirementException):
+            Tuple([1, 2, 3]).take(-1, weight=identity)
 
     def test_take_while(self):
         test = by_iter_eq(Tuple, "take_while")
