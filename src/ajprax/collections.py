@@ -751,7 +751,7 @@ class Iter:
 
         def gen():
             while self.has_next():
-                batch = Tuple(self.take(size, weight=weight))
+                batch = self.take(size, weight=weight).tuple()
                 if batch:
                     yield batch
                 else:
