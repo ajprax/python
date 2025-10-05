@@ -96,13 +96,11 @@ class InProgress(Condition):
 
 
 class Cache:
-    def __init__(self, f, key, method, waiting_for_in_progress=None):
+    def __init__(self, f, key, method):
         self.f = f
         self.signature = signature(f)
         self.key = DefaultKey(tuple(self.signature.parameters)) if key is Unset else key
         self.method = method
-        # Event used for synchronization in tests
-        self.waiting_for_in_progress = waiting_for_in_progress
         self.name = f"_{f.__name__}_cache"
         self.creation_lock = Lock()
 
@@ -133,8 +131,6 @@ class Cache:
             elif isinstance(existing, InProgress):
                 condition = existing
                 while condition.exception is None and cell.value.get(key) is condition:
-                    if self.waiting_for_in_progress:
-                        self.waiting_for_in_progress.set()
                     condition.wait()
                 # raise exception in all waiting threads
                 if condition.exception is not None:

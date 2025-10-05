@@ -1,3 +1,4 @@
+import sys
 import time
 from functools import partial
 from threading import Event, Thread, Condition
@@ -477,25 +478,29 @@ class TestCache:
         self._test_default_key(c2.f)
 
     def test_raise_for_all_callers(self):
-        leader_has_started = Event()
-        follower_is_waiting = Event()
-
         def f(_):
-            leader_has_started.set()
-            follower_is_waiting.wait()
+            leader_has_entered_f.set()
+            # wait for the follower to start so that it's ident is set
+            follower_has_started.wait()
+            # busy wait for the follower to enter Condition.wait to be sure it wakes properly from notify_all
+            while sys._current_frames().get(follower.ident).f_code.co_qualname != "Condition.wait":
+                pass
             raise ValueError
 
-        f = Cache(f, Unset, False, follower_is_waiting)
+        f = Cache(f, Unset, False)
 
         def target():
             with should_raise(ValueError):
                 f(None)
 
+        leader_has_entered_f = Event()
+        follower_has_started = Event()
         leader = Thread(target=target)
         follower = Thread(target=target)
         leader.start()
-        leader_has_started.wait()
+        leader_has_entered_f.wait()
         follower.start()
+        follower_has_started.set()
         leader.join()
         follower.join()
 
