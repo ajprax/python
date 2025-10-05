@@ -90,13 +90,19 @@ class InProgress(Condition):
     Wrapped so that we don't mistake user Condition values for our marker
     """
 
+    def __init__(self, lock):
+        Condition.__init__(self, lock)
+        self.exception = None
+
 
 class Cache:
-    def __init__(self, f, key, method):
+    def __init__(self, f, key, method, waiting_for_in_progress=None):
         self.f = f
         self.signature = signature(f)
         self.key = DefaultKey(tuple(self.signature.parameters)) if key is Unset else key
         self.method = method
+        # Event used for synchronization in tests
+        self.waiting_for_in_progress = waiting_for_in_progress
         self.name = f"_{f.__name__}_cache"
         self.creation_lock = Lock()
 
@@ -117,24 +123,39 @@ class Cache:
         args = self.signature.bind(*a, **kw)
         args.apply_defaults()
         key = self.key(*args.args[self.method:], **args.kwargs)
-
         cell = self.get_or_create_cell(a[0] if self.method else self)
+
         with cell.lock:
-            if key in cell.value:
-                value = cell.value[key]
-                if isinstance(value, InProgress):
-                    with value:
-                        value.wait()
-                        value = cell.value[key]
-                return value
+            existing = cell.value.get(key, Unset)
+            if existing is Unset:
+                condition = InProgress(cell.lock)
+                cell.value[key] = condition
+            elif isinstance(existing, InProgress):
+                condition = existing
+                while condition.exception is None and cell.value.get(key) is condition:
+                    if self.waiting_for_in_progress:
+                        self.waiting_for_in_progress.set()
+                    condition.wait()
+                # raise exception in all waiting threads
+                if condition.exception is not None:
+                    raise condition.exception
+                return cell.value[key]
+            else:
+                return existing
 
-            condition = InProgress(cell.lock)
-            cell.value[key] = condition
+        try:
+            value = self.f(*args.args, **args.kwargs)
+        except Exception as e:
+            with cell.lock:
+                if cell.value.get(key) is condition:
+                    condition.exception = e
+                    condition.notify_all()
+                    del cell.value[key]
+            raise
 
-        value = self.f(*args.args, **args.kwargs)
         with cell.lock:
             # it's important to set this value under the lock to avoid a race condition where a concurrent caller
-            # gets the InProgress from the dict before overwrite it, but waits on it after we notify_all.
+            # gets the InProgress from the dict before we overwrite it, but waits on it after we notify_all.
             # in short, all reads and writes to the dict should be under the lock.
             cell.value[key] = value
             condition.notify_all()

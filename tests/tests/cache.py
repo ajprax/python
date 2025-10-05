@@ -1,6 +1,11 @@
+import time
 from functools import partial
+from threading import Event, Thread, Condition
 
-from ajprax.cache import cache
+from ajprax.cache import cache, InProgress, Cache
+from ajprax.logging import log
+from ajprax.sentinel import Unset
+from tests import should_raise
 
 
 def add(a, b):
@@ -470,6 +475,42 @@ class TestCache:
 
         self._test_default_key(c.f)
         self._test_default_key(c2.f)
+
+    def test_raise_for_all_callers(self):
+        leader_has_started = Event()
+        follower_is_waiting = Event()
+
+        def f(_):
+            leader_has_started.set()
+            follower_is_waiting.wait()
+            raise ValueError
+
+        f = Cache(f, Unset, False, follower_is_waiting)
+
+        def target():
+            with should_raise(ValueError):
+                f(None)
+
+        leader = Thread(target=target)
+        follower = Thread(target=target)
+        leader.start()
+        leader_has_started.wait()
+        follower.start()
+        leader.join()
+        follower.join()
+
+    def test_succeeds_after_failing(self):
+        @cache
+        def f(_):
+            if should_fail:
+                raise ValueError
+            return "success"
+
+        should_fail = True
+        with should_raise(ValueError):
+            f(None)
+        should_fail = False
+        assert f(None) == "success"
 
 
 class TestSingleton:
