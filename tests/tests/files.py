@@ -1,12 +1,26 @@
 from base64 import b64encode
 from os import path
+from tempfile import NamedTemporaryFile
 
-from ajprax.files import backup, contents, crc32c, md5, sha1, sha256
+from ajprax.files import atomic_write, backup, contents, crc32c, md5, sha1, sha256
 from tests import iter_eq
 
 
 def asset(name):
     return path.join(path.dirname(__file__), "assets", name)
+
+
+def test_atomic_write():
+    with NamedTemporaryFile("w") as temp:
+        temp.write("old")
+        temp.flush()
+
+        with atomic_write(temp.name) as atomic:
+            atomic.write("new")
+            atomic.flush()
+
+            assert "".join(contents(temp.name)) == "old"
+        assert "".join(contents(temp.name)) == "new"
 
 
 def test_backup():

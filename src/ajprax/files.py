@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from os import remove
 from shutil import copy, move
+from tempfile import NamedTemporaryFile
 
 from ajprax.collections import Iter
 from ajprax.require import require
@@ -9,6 +10,13 @@ try:
     import crcmod
 except ImportError:
     crcmod = False
+
+
+@contextmanager
+def atomic_write(filename, mode="w"):
+    with NamedTemporaryFile(mode, delete=False) as temp:
+        yield temp
+    move(temp.name, filename)
 
 
 @contextmanager
