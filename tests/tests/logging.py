@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from threading import Thread, Event
 
@@ -33,6 +34,36 @@ class TestLog:
             assert ("key='value'" in log) == bool(keywords)
             assert ("exception message" in log) == bool(exception)
             assert log.split("\n")[0].startswith("2024-01-01T00:00:00.000001Z  INFO ")
+
+        for (message, keywords, exception) in Iter((True, False)).product(repeat=3):
+            message = "log message" if message else ""
+            keywords = {"key": "value"} if keywords else {}
+            exception = Exception("exception message") if exception else None
+            test(
+                datetime(2024, 1, 1, 0, 0, 0, 1, tzinfo=timezone.utc),
+                INFO,
+                message,
+                keywords,
+                exception,
+            )
+
+    def test_json(self):
+        def test(datetime, level, message, keywords, exception):
+            log = json.loads(Log(datetime, level, message, keywords, exception).json)
+            assert "2024-01-01T00:00:00.000001Z" == log["time"]
+            assert LEVEL_NAME[level] == log["level"]
+            if message:
+                assert message == log["message"]
+            else:
+                assert "message" not in log
+            if keywords:
+                assert {k: repr(v) for k, v in keywords.items()} == log["keywords"]
+            else:
+                assert "keywords" not in log
+            if exception:
+                assert str(exception) in log["exception"]
+            else:
+                assert "exception" not in log
 
         for (message, keywords, exception) in Iter((True, False)).product(repeat=3):
             message = "log message" if message else ""

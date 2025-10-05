@@ -1,3 +1,4 @@
+import json
 import sys
 import traceback
 from contextlib import contextmanager
@@ -42,9 +43,9 @@ class Log:
                 self.exception = None
 
     def __str__(self):
-        message = str(self.message)
         ts = self.datetime.isoformat().replace("+00:00", "Z")
         level = LEVEL_NAME[self.level]
+        message = str(self.message)
         if self.keywords:
             message += " " if message else ""
             message += " ".join(f"{k}={repr(v)}" for k, v in self.keywords.items())
@@ -52,6 +53,20 @@ class Log:
             message += "\n"
             message += "".join("\t" + line for line in traceback.format_exception(self.exception))
         return f"{ts} {level} {message}"
+
+    @property
+    def json(self):
+        d = dict(
+            time=self.datetime.isoformat().replace("+00:00", "Z"),
+            level=LEVEL_NAME[self.level],
+        )
+        if self.message:
+            d["message"] = str(self.message)
+        if self.keywords:
+            d["keywords"] = {str(k): repr(v) for k, v in self.keywords.items()}
+        if self.exception:
+            d["exception"] = "".join("\t" + line for line in traceback.format_exception(self.exception))
+        return json.dumps(d)
 
 
 class Logger(Events):
