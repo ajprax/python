@@ -25,3 +25,6 @@ watch = "python watch_tests.py"
 [project.urls]
 Homepage = "https://github.com/ajprax/python"
 Issues = "https://github.com/ajprax/python/issues"
+
+[tool.ruff]
+exclude = ["prelude.py"]
