@@ -47,6 +47,7 @@ class Log:
     message: str
     keywords: dict
     exception: Optional[BaseException]
+    logger_name: Optional[str]
 
     def __post_init__(self):
         if isinstance(self.exception, bool):
@@ -61,6 +62,8 @@ class Log:
             yield LEVEL_COLOR[self.level] + LEVEL_NAME[self.level] + RESET
         else:
             yield LEVEL_NAME[self.level]
+        if self.logger_name is not None:
+            yield f"[{self.logger_name}]"
         if self.message:
             yield self.message
         for k, v in self.keywords.items():
@@ -81,6 +84,8 @@ class Log:
             time=self.datetime.isoformat().replace("+00:00", "Z"),
             level=LEVEL_NAME[self.level],
         )
+        if self.logger_name:
+            d["logger"] = self.logger_name
         if self.message:
             d["message"] = str(self.message)
         if self.keywords:
@@ -91,8 +96,9 @@ class Log:
 
 
 class Logger(Events):
-    def __init__(self):
+    def __init__(self, name=None):
         Events.__init__(self)
+        self.name = name
         self._global_level = INFO
         self._context_level = ContextVar("level", default=None)
         self._kwargs = ContextVar("kwargs", default={})
@@ -117,6 +123,7 @@ class Logger(Events):
                 _message,
                 {**self._kwargs.get(), **kwargs},
                 _exception,
+                self.name,
             ))
 
     def trace(self, _message="", _exception=False, **kwargs):
