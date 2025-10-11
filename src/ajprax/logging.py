@@ -1,14 +1,17 @@
 import json
+import os
 import sys
 import traceback
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from threading import Lock, Event
 from typing import Optional
 
 from ajprax.experimental.subscriptions import Events
 from ajprax.print import print
+from ajprax.require import require
 
 TRACE = 0
 DEBUG = 10
@@ -134,3 +137,84 @@ class Logger(Events):
 
 
 log = Logger()
+
+
+class FlushOptimizingWriter:
+    def __init__(self, file):
+        self.file = file
+        self.write_lock = Lock()
+        self.buffer_lock = Lock()
+        self.buffer = []
+
+    def write(self, data):
+        with self.buffer_lock:
+            writer = not self.buffer
+            event = Event()
+            self.buffer.append((data, event))
+
+        if writer:
+            with self.write_lock:
+                # swapping the buffer must happen under the write lock to guarantee that a second writer can't get the
+                # new buffer and the write lock before this one, which would violate ordering expectations
+                with self.buffer_lock:
+                    to_write, self.buffer = self.buffer, []
+                for data, _ in to_write:
+                    self.file.write(data)
+                self.file.flush()
+                for _, event in to_write:
+                    event.set()
+        else:
+            event.wait()
+
+
+class RolledLog:
+    """
+    Rolls log files when max_bytes are exceeded or max_duration has elapsed.
+
+    If a single line exceeds max_bytes, it will be given a file by itself.
+    Start the timer when the first log arrives after max_duration has elapsed, not when the previous window would have
+    expired.
+    """
+
+    def __init__(self, directory, *, max_bytes=None, max_duration=None, file_pattern="{}.log", json=False):
+        require(
+            max_bytes is not None or max_duration is not None,
+            "must specify at least one of max_bytes and max_duration",
+        )
+
+        self.directory = directory
+        self.max_bytes = max_bytes
+        self.max_duration = max_duration
+        self.file_pattern = file_pattern
+        self.format = (lambda log: log.json) if json else str
+
+        self.lock = Lock()
+        self.writer = None
+        self.used_bytes = 0
+        self.start_time = None
+
+    def write(self, bytes):
+        with self.lock:
+            now = datetime.now(timezone.utc)
+            self.used_bytes += len(bytes)
+            if self.writer is None:
+                os.makedirs(self.directory, exist_ok=True)
+
+            if (
+                    self.writer is None
+                    or (self.max_bytes is not None and self.used_bytes > self.max_bytes)
+                    or (self.max_duration is not None and now - self.start_time > self.max_duration)
+            ):
+                # don't close the old writer. it's not necessary because all data is flushed, and it opens a race where
+                # one thread gets a handle to the current writer and another closes it before the write actually happens
+
+                self.used_bytes = len(bytes)
+                self.start_time = now
+                self.writer = FlushOptimizingWriter(open(
+                    os.path.join(self.directory, self.file_pattern.format(now.isoformat().replace("+00:00", "Z"))),
+                    "xb",
+                ))
+        self.writer.write(bytes)
+
+    def __call__(self, log):
+        self.write((self.format(log) + "\n").encode("utf8"))
