@@ -89,8 +89,8 @@ class TestLog:
             log.info("b")
             aevent.set()
 
-        def test(l):
-            assert l.message == "b"
+        def test(log):
+            assert log.message == "b"
 
         log = Logger()
         log.subscribe(test)
@@ -116,8 +116,8 @@ class TestLog:
             log.info("b")
             aevent.set()
 
-        def test(l):
-            assert l.message == "a"
+        def test(log):
+            assert log.message == "a"
 
         log = Logger()
         log.subscribe(test)
@@ -143,9 +143,9 @@ class TestLog:
             log.info(b=True)
             aevent.set()
 
-        def test(l):
-            assert "a" not in l.keywords
-            assert "b" in l.keywords
+        def test(log):
+            assert "a" not in log.keywords
+            assert "b" in log.keywords
 
         log = Logger()
         log.subscribe(test)

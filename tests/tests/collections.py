@@ -41,7 +41,8 @@ def test_coverage():
                 methods.add(name)
         return methods
 
-    import ajprax, tests
+    import ajprax
+    import tests
 
     functions, classes = functions_and_classes(ajprax.collections)
     test_functions, test_classes = functions_and_classes(tests.collections)
@@ -127,7 +128,7 @@ def test_wrap():
     def test(expected, it):
         actual = wrap(it)
         assert actual == expected
-        assert type(actual) == type(expected)
+        assert type(actual) is type(expected)
         if isinstance(it, (DefaultDict, Dict, DictKeys, DictValues, Iter, List, Range, Set, Tuple)):
             assert actual is it
 
@@ -746,9 +747,9 @@ class TestDict:
         ab = {"a": 1, "b": 2}
         abc = {"a": 1, "b": 2, "c": 3}
 
-        for l, r in Iter((a, b, c)).combinations(2):
-            test({}, l, r)
-            test({}, r, l)
+        for x, y in Iter((a, b, c)).combinations(2):
+            test({}, x, y)
+            test({}, y, x)
         test({}, a, b, c)
         test(a, a, a)
         test(a, a, ab)

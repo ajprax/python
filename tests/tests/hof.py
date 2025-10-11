@@ -1,4 +1,4 @@
-from ajprax.hof import *
+from ajprax.hof import kw, t
 from tests import should_raise
 
 

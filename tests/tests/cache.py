@@ -1,10 +1,8 @@
 import sys
-import time
 from functools import partial
-from threading import Event, Thread, Condition
+from threading import Event, Thread
 
-from ajprax.cache import cache, InProgress, Cache
-from ajprax.logging import log
+from ajprax.cache import cache, Cache
 from ajprax.sentinel import Unset
 from tests import should_raise
 

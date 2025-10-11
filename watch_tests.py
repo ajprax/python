@@ -19,7 +19,7 @@ class Runner(Thread):
                 run(["source venv/bin/activate && clear && date && hatch test"], cwd=directory, shell=True)
             except KeyboardInterrupt:
                 raise
-            except:
+            except Exception:
                 pass
             # in principle, a real change could happen while the tests are running, but it is very unlikely since the
             # tests are fast, and in reality one file change emits multiple events causing the tests to run multiple

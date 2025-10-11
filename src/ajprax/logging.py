@@ -201,9 +201,9 @@ class RolledLog:
                 os.makedirs(self.directory, exist_ok=True)
 
             if (
-                    self.writer is None
-                    or (self.max_bytes is not None and self.used_bytes > self.max_bytes)
-                    or (self.max_duration is not None and now - self.start_time > self.max_duration)
+                self.writer is None
+                or (self.max_bytes is not None and self.used_bytes > self.max_bytes)
+                or (self.max_duration is not None and now - self.start_time > self.max_duration)
             ):
                 # don't close the old writer. it's not necessary because all data is flushed, and it opens a race where
                 # one thread gets a handle to the current writer and another closes it before the write actually happens
