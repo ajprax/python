@@ -29,6 +29,16 @@ LEVEL_NAME = {
     FATAL: "FATAL",
 }
 
+LEVEL_COLOR = {
+    TRACE: "\033[90m",
+    DEBUG: "\033[35m",
+    INFO: "\033[36m",
+    WARN: "\033[33m",
+    ERROR: "\033[31m",
+    FATAL: "\033[1;31m",
+}
+RESET = "\033[0m"
+
 
 @dataclass
 class Log:
@@ -45,17 +55,25 @@ class Log:
             else:
                 self.exception = None
 
-    def __str__(self):
-        ts = self.datetime.isoformat().replace("+00:00", "Z")
-        level = LEVEL_NAME[self.level]
-        message = str(self.message)
-        if self.keywords:
-            message += " " if message else ""
-            message += " ".join(f"{k}={repr(v)}" for k, v in self.keywords.items())
+    def parts(self, color=False):
+        yield self.datetime.isoformat().replace("+00:00", "Z")
+        if color:
+            yield LEVEL_COLOR[self.level] + LEVEL_NAME[self.level] + RESET
+        else:
+            yield LEVEL_NAME[self.level]
+        if self.message:
+            yield self.message
+        for k, v in self.keywords.items():
+            yield f"{k}={repr(v)}"
         if self.exception:
-            message += "\n"
-            message += "".join("\t" + line for line in traceback.format_exception(self.exception))
-        return f"{ts} {level} {message}"
+            yield "\n" + "".join("\t" + line for line in traceback.format_exception(self.exception))
+
+    def __str__(self):
+        return " ".join(self.parts())
+
+    @property
+    def color(self):
+        return " ".join(self.parts(True))
 
     @property
     def json(self):
@@ -78,7 +96,7 @@ class Logger(Events):
         self._global_level = INFO
         self._context_level = ContextVar("level", default=None)
         self._kwargs = ContextVar("kwargs", default={})
-        self.subscribe(print)
+        self.subscribe(lambda line: print(line.color))
 
     @property
     def level(self):
