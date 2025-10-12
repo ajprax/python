@@ -201,7 +201,7 @@ class RolledLog:
     expired.
     """
 
-    def __init__(self, directory, *, max_bytes=None, max_duration=None, file_pattern="{}.log", json=False):
+    def __init__(self, directory, *, max_bytes=None, max_duration=None, file_pattern="{}.log"):
         require(
             max_bytes is not None or max_duration is not None,
             "must specify at least one of max_bytes and max_duration",
@@ -211,7 +211,6 @@ class RolledLog:
         self.max_bytes = max_bytes
         self.max_duration = max_duration
         self.file_pattern = file_pattern
-        self.format = (lambda log: log.json) if json else str
 
         self.lock = Lock()
         self.writer = None
@@ -242,4 +241,4 @@ class RolledLog:
         self.writer.write(bytes)
 
     def __call__(self, log):
-        self.write((self.format(log) + "\n").encode("utf8"))
+        self.write((str(log) + "\n").encode("utf8"))
