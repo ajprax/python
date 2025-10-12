@@ -51,19 +51,19 @@ class Events(Notifications):
         return IterEvents(self)
 
     def all(self, key=Unset):
-        pass
+        return AllEvents(self, key)
 
     def any(self, key=Unset):
-        pass
+        return AnyEvents(self, key)
 
     def batch(self, size):
         pass
 
     def count(self, key=Unset):
-        pass
+        return CountEvents(self, key)
 
     def distinct(self, key=Unset):
-        pass
+        return DistinctEvents(self, key)
 
     def filter(self, fn):
         return FilteredEvents(self, fn)
@@ -151,6 +151,9 @@ class Value(Notifications):
         self._value = value
         self.notify(value)
 
+    def update(self, fn):
+        self.value = fn(self.value)
+
     def subscribe(self, callback):
         if self._value is not Unset:
             callback(self._value)
@@ -209,6 +212,17 @@ class AllEvents(Value):
         self.value &= bool(self.key(event))
 
 
+class AnyEvents(Value):
+    def __init__(self, events, key=Unset):
+        self.key = identity if key is Unset else key
+        Value.__init__(self)
+        self.set(False)
+        events.subscribe(self.on_event)
+
+    def on_event(self, event):
+        self.value |= bool(self.key(event))
+
+
 class IterEvents(EventsCombinator, Iter):
     def __init__(self, events):
         def iter_from_queue():
@@ -222,6 +236,35 @@ class IterEvents(EventsCombinator, Iter):
     def on_event(self, event):
         print("putting", event)
         self.queue.put(event)
+
+
+class CountEvents(Value):
+    def __init__(self, events, key=Unset):
+        self.key = identity if key is Unset else key
+        Value.__init__(self)
+        self.set({})
+        events.subscribe(self.on_event)
+
+    def on_event(self, event):
+        def update(counts):
+            key = self.key(event)
+            if key not in counts:
+                counts[key] = 0
+            counts[key] += 1
+        self.update(update)
+
+
+class DistinctEvents(EventsCombinator):
+    def __init__(self, events, key=Unset):
+        self.key = identity if key is Unset else key
+        self.seen = set()
+        EventsCombinator.__init__(self, events)
+
+    def on_event(self, event):
+        key = self.key(event)
+        if key not in self.seen:
+            self.seen.add(key)
+            self.send(event)
 
 
 class FilteredEvents(EventsCombinator):
