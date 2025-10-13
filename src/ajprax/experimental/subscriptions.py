@@ -191,7 +191,16 @@ class EventsCombinator(ABC, Events):
     def __init__(self, events):
         Events.__init__(self)
         self.events = events
-        self.events.subscribe(self.on_event)
+
+    def subscribe(self, callback):
+        if not self._callbacks:
+            self.events.subscribe(self.on_event)
+        Events.subscribe(self, callback)
+
+    def unsubscribe(self, callback):
+        Events.unsubscribe(self, callback)
+        if not self._callbacks:
+            self.events.unsubscribe(self.on_event)
 
     @abstractmethod
     def on_event(self, event):
