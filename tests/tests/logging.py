@@ -28,23 +28,26 @@ class TestLog:
             test(log_level, message_level, "message", key="value")
 
     def test_format(self):
-        def test(datetime, level, message, keywords, exception):
-            log = str(Log(datetime, level, message, keywords, exception))
+        def test(datetime, level, message, keywords, exception, logger_name):
+            log = str(Log(datetime, level, message, keywords, exception, logger_name=logger_name))
             assert ("log message" in log) == bool(message)
             assert ("key='value'" in log) == bool(keywords)
             assert ("exception message" in log) == bool(exception)
-            assert log.split("\n")[0].startswith("2024-01-01T00:00:00.000001Z  INFO ")
+            assert log.split("\n")[0].startswith("2024-01-01T00:00:00.000001Z  INFO")
+            assert ("logger_name" in log) == bool(logger_name)
 
-        for (message, keywords, exception) in Iter((True, False)).product(repeat=3):
+        for (message, keywords, exception, logger_name) in Iter((True, False)).product(repeat=4):
             message = "log message" if message else ""
             keywords = {"key": "value"} if keywords else {}
             exception = Exception("exception message") if exception else None
+            logger_name = "logger_name" if logger_name else None
             test(
                 datetime(2024, 1, 1, 0, 0, 0, 1, tzinfo=timezone.utc),
                 INFO,
                 message,
                 keywords,
                 exception,
+                logger_name,
             )
 
     def test_json(self):

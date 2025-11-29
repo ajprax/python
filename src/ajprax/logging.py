@@ -47,7 +47,7 @@ class Log:
     message: str
     keywords: dict
     exception: Optional[BaseException]
-    logger_name: Optional[str]
+    logger_name: Optional[str] = None
 
     def __post_init__(self):
         if isinstance(self.exception, bool):
