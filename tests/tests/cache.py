@@ -1,668 +1,725 @@
-import sys
-from functools import partial
-from threading import Event, Thread
+import gc
+import threading
+import time
+import weakref
+from dataclasses import dataclass
+from typing import Callable, Optional, Tuple
 
-from ajprax.cache import cache, Cache
-from ajprax.sentinel import Unset
-from tests import should_raise
+import pytest
+
+from ajprax.cache import DoNotCache, cache
 
 
-def add(a, b):
-    return a + b
+TARGET_KINDS = ("function", "instance_method", "classmethod")
+ARITIES = ("singleton", "dict")
+KEY_MODES = ("default", "custom_identity")
 
 
-class TestCache:
-    def _test_default_key(self, f):
-        def test(expected_count, expected_value, f, *a, **kw):
-            actual_value = f(*a, **kw)
-            actual_count = self.count
-            assert actual_value == expected_value
-            assert actual_count == expected_count
+@dataclass
+class Subject:
+    call: Callable
+    clear: Callable
+    remove: Callable
+    call_count: Callable[[], int]
+    descriptor: Optional[object] = None
 
-        self.count = 0
-        test(1, [1, 1], f, 1, 2)
-        test(1, [1, 1], f, 1, b=2)
-        test(1, [1, 1], f, a=1, b=2)
-        test(2, [1, 1, 1], f, 1, 3)
-        test(3, [2], f, 2, 1)
 
-    def _test_custom_key(self, f):
-        def test(expected_count, expected_value, f, *a, **kw):
-            actual_value = f(*a, **kw)
-            actual_count = self.count
-            assert actual_value == expected_value
-            assert actual_count == expected_count
+def _cache_decorator_for(arity: str, key_mode: str, collapse_custom_key: bool = False):
+    if key_mode == "default":
+        return cache
 
-        self.count = 0
-        test(1, [1, 1], f, 1, 2)
-        test(1, [1, 1], f, 1, b=2)
-        test(1, [1, 1], f, a=1, b=2)
-        test(2, [1, 1, 1], f, 1, 3)
-        test(2, [1, 1], f, 2, 1)
+    if arity == "singleton":
+        return cache(key=lambda: "singleton-key")
 
-    def test_function(self):
-        @cache()
-        def f(a, b):
-            self.count += 1
-            return [a] * b
+    if collapse_custom_key:
+        return cache(key=lambda a, b=2: a + b)
+    return cache(key=lambda a, b=2: (a, b))
 
-        self._test_default_key(f)
 
-    def test_function_no_call(self):
+def _equivalent_key_call_forms(arity: str):
+    if arity == "singleton":
+        return [((), {}), ((), {})]
+    return [
+        ((1, 2), {}),
+        ((1,), {"b": 2}),
+        ((1,), {}),
+        ((), {"a": 1, "b": 2}),
+        ((), {"b": 2, "a": 1}),
+    ]
+
+
+def _primary_form(arity: str):
+    if arity == "singleton":
+        return (), {}
+    return (1, 2), {}
+
+
+def _missing_key_form(arity: str):
+    if arity == "singleton":
+        return (), {}
+    return (9, 9), {}
+
+
+def _build_subject(
+    target_kind: str, arity: str, key_mode: str, collapse_custom_key: bool = False
+) -> Tuple[Subject, Optional[Subject]]:
+    decorator = _cache_decorator_for(arity, key_mode, collapse_custom_key=collapse_custom_key)
+
+    if target_kind == "function":
+        counter = {"count": 0}
+
+        if arity == "singleton":
+
+            @decorator
+            def fn():
+                counter["count"] += 1
+                return counter["count"]
+
+        else:
+
+            @decorator
+            def fn(a, b=2):
+                counter["count"] += 1
+                return counter["count"]
+
+        primary = Subject(
+            call=lambda *args, **kwargs: fn(*args, **kwargs),
+            clear=lambda: fn.clear(),
+            remove=lambda *args, **kwargs: fn.remove(*args, **kwargs),
+            call_count=lambda: counter["count"],
+            descriptor=fn,
+        )
+        return primary, None
+
+    if target_kind == "instance_method":
+
+        class Worker:
+            def __init__(self):
+                self.calls = 0
+
+            if arity == "singleton":
+
+                @decorator
+                def compute(self):
+                    self.calls += 1
+                    return self.calls
+
+            else:
+
+                @decorator
+                def compute(self, a, b=2):
+                    self.calls += 1
+                    return self.calls
+
+        first = Worker()
+        second = Worker()
+        descriptor = Worker.__dict__["compute"]
+        primary = Subject(
+            call=lambda *args, **kwargs: first.compute(*args, **kwargs),
+            clear=lambda: first.compute.clear(),
+            remove=lambda *args, **kwargs: first.compute.remove(*args, **kwargs),
+            call_count=lambda: first.calls,
+            descriptor=descriptor,
+        )
+        secondary = Subject(
+            call=lambda *args, **kwargs: second.compute(*args, **kwargs),
+            clear=lambda: second.compute.clear(),
+            remove=lambda *args, **kwargs: second.compute.remove(*args, **kwargs),
+            call_count=lambda: second.calls,
+            descriptor=descriptor,
+        )
+        return primary, secondary
+
+    if target_kind == "classmethod":
+
+        class Base:
+            calls = 0
+
+            if arity == "singleton":
+
+                @decorator
+                @classmethod
+                def compute(cls):
+                    cls.calls += 1
+                    return cls.calls
+
+            else:
+
+                @decorator
+                @classmethod
+                def compute(cls, a, b=2):
+                    cls.calls += 1
+                    return cls.calls
+
+        class Child(Base):
+            calls = 0
+
+        descriptor = Base.__dict__["compute"]
+        primary = Subject(
+            call=lambda *args, **kwargs: Base.compute(*args, **kwargs),
+            clear=lambda: Base.compute.clear(),
+            remove=lambda *args, **kwargs: Base.compute.remove(*args, **kwargs),
+            call_count=lambda: Base.calls,
+            descriptor=descriptor,
+        )
+        secondary = Subject(
+            call=lambda *args, **kwargs: Child.compute(*args, **kwargs),
+            clear=lambda: Child.compute.clear(),
+            remove=lambda *args, **kwargs: Child.compute.remove(*args, **kwargs),
+            call_count=lambda: Child.calls,
+            descriptor=descriptor,
+        )
+        return primary, secondary
+
+    raise ValueError("unknown target kind: {0}".format(target_kind))
+
+
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+@pytest.mark.parametrize("arity", ARITIES)
+@pytest.mark.parametrize("key_mode", KEY_MODES)
+def test_memoization_and_key_canonicalization_matrix(target_kind, arity, key_mode):
+    primary, _ = _build_subject(target_kind, arity, key_mode)
+    forms = _equivalent_key_call_forms(arity)
+    results = [primary.call(*args, **kwargs) for args, kwargs in forms]
+    assert results == [1] * len(forms)
+    assert primary.call_count() == 1
+
+
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+@pytest.mark.parametrize("arity", ARITIES)
+@pytest.mark.parametrize("key_mode", KEY_MODES)
+def test_clear_matrix(target_kind, arity, key_mode):
+    primary, _ = _build_subject(target_kind, arity, key_mode)
+    args, kwargs = _primary_form(arity)
+
+    assert primary.call(*args, **kwargs) == 1
+    assert primary.call(*args, **kwargs) == 1
+    assert primary.call_count() == 1
+
+    primary.clear()
+
+    assert primary.call(*args, **kwargs) == 2
+    assert primary.call_count() == 2
+
+
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+@pytest.mark.parametrize("arity", ARITIES)
+@pytest.mark.parametrize("key_mode", KEY_MODES)
+def test_remove_matrix(target_kind, arity, key_mode):
+    primary, _ = _build_subject(target_kind, arity, key_mode)
+
+    if arity == "singleton":
+        primary.remove()
+        assert primary.call_count() == 0
+
+        assert primary.call() == 1
+        primary.remove()
+        assert primary.call() == 2
+        return
+
+    args, kwargs = _primary_form(arity)
+    assert primary.call(*args, **kwargs) == 1
+
+    primary.remove(1, b=2)
+    assert primary.call(a=1, b=2) == 2
+
+    before = primary.call_count()
+    missing_args, missing_kwargs = _missing_key_form(arity)
+    primary.remove(*missing_args, **missing_kwargs)
+    assert primary.call(*args, **kwargs) == 2
+    assert primary.call_count() == before
+
+
+@pytest.mark.parametrize("target_kind", ("instance_method", "classmethod"))
+@pytest.mark.parametrize("arity", ARITIES)
+@pytest.mark.parametrize("key_mode", KEY_MODES)
+def test_scope_isolation_matrix(target_kind, arity, key_mode):
+    primary, secondary = _build_subject(target_kind, arity, key_mode)
+    assert secondary is not None
+
+    forms = _equivalent_key_call_forms(arity)
+    primary_args, primary_kwargs = forms[0]
+
+    assert primary.call(*primary_args, **primary_kwargs) == 1
+    assert secondary.call(*primary_args, **primary_kwargs) == 1
+    assert primary.call(*forms[1][0], **forms[1][1]) == 1
+    assert secondary.call(*forms[1][0], **forms[1][1]) == 1
+
+    primary.clear()
+    assert primary.call(*primary_args, **primary_kwargs) == 2
+    assert secondary.call(*primary_args, **primary_kwargs) == 1
+
+    secondary.remove(*primary_args, **primary_kwargs)
+    assert secondary.call(*primary_args, **primary_kwargs) == 2
+    assert primary.call(*primary_args, **primary_kwargs) == 2
+
+
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+def test_custom_key_can_coalesce_distinct_inputs_matrix(target_kind):
+    primary, secondary = _build_subject(
+        target_kind, arity="dict", key_mode="custom_identity", collapse_custom_key=True
+    )
+
+    assert primary.call(1, 2) == 1
+    assert primary.call(2, 1) == 1
+    assert primary.call_count() == 1
+
+    if secondary is not None:
+        assert secondary.call(2, 1) == 1
+        assert secondary.call_count() == 1
+
+
+def _bad_function_dict_key_mismatch():
+    @cache(key=lambda a: a)
+    def f(a, b=2):
+        return a + b
+
+    return f
+
+
+def _bad_function_singleton_key_mismatch():
+    @cache(key=lambda a: a)
+    def f():
+        return 1
+
+    return f
+
+
+def _bad_instance_dict_key_mismatch():
+    class C:
+        @cache(key=lambda self, a, b=2: (a, b))
+        def f(self, a, b=2):
+            return a + b
+
+    return C
+
+
+def _bad_instance_singleton_key_mismatch():
+    class C:
+        @cache(key=lambda self: "x")
+        def f(self):
+            return 1
+
+    return C
+
+
+def _bad_classmethod_dict_key_mismatch():
+    class C:
+        @cache(key=lambda cls, a, b=2: (a, b))
+        @classmethod
+        def f(cls, a, b=2):
+            return a + b
+
+    return C
+
+
+def _bad_classmethod_singleton_key_mismatch():
+    class C:
+        @cache(key=lambda cls: "x")
+        @classmethod
+        def f(cls):
+            return 1
+
+    return C
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        _bad_function_dict_key_mismatch,
+        _bad_function_singleton_key_mismatch,
+        _bad_instance_dict_key_mismatch,
+        _bad_instance_singleton_key_mismatch,
+        _bad_classmethod_dict_key_mismatch,
+        _bad_classmethod_singleton_key_mismatch,
+    ],
+)
+def test_key_signature_disagreement_raises_type_error(factory):
+    with pytest.raises(TypeError):
+        factory()
+
+
+def test_instance_cache_state_released_after_gc():
+    class C:
         @cache
-        def f(a, b):
-            self.count += 1
-            return [a] * b
+        def f(self, x):
+            return x
 
-        self._test_default_key(f)
+    c = C()
+    assert c.f(1) == 1
 
-    def test_function_custom(self):
-        @cache(key=add)
-        def f(a, b):
-            self.count += 1
-            return [a] * b
+    descriptor = C.__dict__["f"]
+    assert len(descriptor._instance_states) == 1
 
-        self._test_custom_key(f)
+    ref = weakref.ref(c)
+    del c
+    gc.collect()
 
-    def test_instance_method(self):
-        class C:
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
+    assert ref() is None
+    assert len(descriptor._instance_states) == 0
 
-        self._test_default_key(C().f)
 
-    def test_instance_method_custom(self):
-        class C:
-            @cache(key=add, method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+@pytest.mark.parametrize("arity", ARITIES)
+def test_same_key_concurrency_coalesces_matrix(target_kind, arity):
+    calls = {"count": 0}
+    entered = threading.Event()
+    release = threading.Event()
 
-        self._test_custom_key(C().f)
+    decorator = cache
 
-    def test_instance_method_partial(self):
-        class C:
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
+    if target_kind == "function":
+        if arity == "singleton":
 
-        self._test_default_key(partial(C.f, C()))
-
-    def test_instance_method_partial_custom(self):
-        class C:
-            @cache(key=add, method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_custom_key(partial(C.f, C()))
-
-    def test_classmethod(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_default_key(C.f)
-
-    def test_classmethod_custom(self):
-        class C:
-            @classmethod
-            @cache(key=add, method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_custom_key(C.f)
-
-    def test_classmethod_via_instance(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_default_key(C().f)
-
-    def test_classmethod_via_instance_custom(self):
-        class C:
-            @classmethod
-            @cache(key=add, method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_custom_key(C().f)
-
-    def test_classmethod_subclass(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_default_key(D.f)
-
-        # C.f should have nothing in it, so calling it will increase self.count
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count + 1
-
-    def test_classmethod_subclass_custom(self):
-        class C:
-            @classmethod
-            @cache(key=add, method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_custom_key(D.f)
-
-        # C.f should have nothing in it, so calling it will increase self.count
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count + 1
-
-    def test_classmethod_subclass_via_instance(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_default_key(D().f)
-
-        # the cache should live with the class
-        count = self.count
-        D.f(1, 2)
-        assert self.count == count
-
-        # C.f should have nothing in it, so calling it will increase self.count
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count + 1
-
-    def test_classmethod_subclass_via_instance_custom(self):
-        class C:
-            @classmethod
-            @cache(key=add, method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_custom_key(D().f)
-
-        # the cache should live with the class
-        count = self.count
-        D.f(1, 2)
-        assert self.count == count
-
-        # C.f should have nothing in it, so calling it will increase self.count
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count + 1
-
-    def test_staticmethod(self):
-        class C:
-            @staticmethod
-            @cache()
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_default_key(C.f)
-
-    def test_staticmethod_no_call(self):
-        class C:
-            @staticmethod
-            @cache
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_default_key(C.f)
-
-    def test_staticmethod_custom(self):
-        class C:
-            @staticmethod
-            @cache(key=add)
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_custom_key(C.f)
-
-    def test_staticmethod_via_instance(self):
-        class C:
-            @staticmethod
-            @cache()
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_default_key(C().f)
-
-        # the cache should live with the class
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_via_instance_no_call(self):
-        class C:
-            @staticmethod
-            @cache
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_default_key(C().f)
-
-        # the cache should live with the class
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_via_instance_custom(self):
-        class C:
-            @staticmethod
-            @cache(key=add)
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        self._test_custom_key(C().f)
-
-        # the cache should live with the class
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_subclass(self):
-        class C:
-            @staticmethod
-            @cache()
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_default_key(D.f)
-
-        # for static methods, the cache is shared with subclasses
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_subclass_no_call(self):
-        class C:
-            @staticmethod
-            @cache
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_default_key(D.f)
-
-        # for static methods, the cache is shared with subclasses
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_subclass_custom(self):
-        class C:
-            @staticmethod
-            @cache(key=add)
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_custom_key(D.f)
-
-        # for static methods, the cache is shared with subclasses
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_subclass_via_instance(self):
-        class C:
-            @staticmethod
-            @cache()
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_default_key(D().f)
-
-        # for static methods, the cache is shared with subclasses
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_subclass_via_instance_no_call(self):
-        class C:
-            @staticmethod
-            @cache
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_default_key(D().f)
-
-        # for static methods, the cache is shared with subclasses
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_staticmethod_subclass_via_instance_custom(self):
-        class C:
-            @staticmethod
-            @cache(key=add)
-            def f(a, b):
-                self.count += 1
-                return [a] * b
-
-        class D(C):
-            pass
-
-        self._test_custom_key(D().f)
-
-        # for static methods, the cache is shared with subclasses
-        count = self.count
-        C.f(1, 2)
-        assert self.count == count
-
-    def test_default_values(self):
-        @cache()
-        def f(a, b=2):
-            self.count += 1
-            return [a] * b
-
-        def test(expected_count, expected_value, f, *a, **kw):
-            actual_value = f(*a, **kw)
-            actual_count = self.count
-            assert actual_value == expected_value
-            assert actual_count == expected_count
-
-        self.count = 0
-        test(1, [1, 1], f, 1)
-        test(1, [1, 1], f, 1)
-        test(1, [1, 1], f, a=1)
-        test(2, [1, 1, 1], f, 1, 3)
-        test(3, [2], f, 2, 1)
-
-    def test_default_values_no_call(self):
-        @cache
-        def f(a, b=2):
-            self.count += 1
-            return [a] * b
-
-        def test(expected_count, expected_value, f, *a, **kw):
-            actual_value = f(*a, **kw)
-            actual_count = self.count
-            assert actual_value == expected_value
-            assert actual_count == expected_count
-
-        self.count = 0
-        test(1, [1, 1], f, 1)
-        test(1, [1, 1], f, 1)
-        test(1, [1, 1], f, a=1)
-        test(2, [1, 1, 1], f, 1, 3)
-        test(3, [2], f, 2, 1)
-
-    def test_default_values_custom(self):
-        @cache(key=add)
-        def f(a, b=2):
-            self.count += 1
-            return [a] * b
-
-        def test(expected_count, expected_value, f, *a, **kw):
-            actual_value = f(*a, **kw)
-            actual_count = self.count
-            assert actual_value == expected_value
-            assert actual_count == expected_count
-
-        self.count = 0
-        test(1, [1, 1], f, 1)
-        test(1, [1, 1], f, 1)
-        test(1, [1, 1], f, a=1)
-        test(2, [1, 1, 1], f, 1, 3)
-        test(2, [1, 1], f, 2, 1)
-
-    def test_two_instances(self):
-        class C:
-            @cache(method=True)
-            def f(_, a, b):
-                self.count += 1
-                return [a] * b
-
-        c = C()
-        c2 = C()
-
-        self._test_default_key(c.f)
-        self._test_default_key(c2.f)
-
-    def test_raise_for_all_callers(self):
-        def f(_):
-            leader_has_entered_f.set()
-            # wait for the follower to start so that it's ident is set
-            follower_has_started.wait()
-            # busy wait for the follower to enter Condition.wait to be sure it wakes properly from notify_all
-            while sys._current_frames().get(follower.ident).f_code.co_qualname != "Condition.wait":
-                pass
-            raise ValueError
-
-        f = Cache(f, Unset, False)
-
-        def target():
-            with should_raise(ValueError):
-                f(None)
-
-        leader_has_entered_f = Event()
-        follower_has_started = Event()
-        leader = Thread(target=target)
-        follower = Thread(target=target)
-        leader.start()
-        leader_has_entered_f.wait()
-        follower.start()
-        follower_has_started.set()
-        leader.join()
-        follower.join()
-
-    def test_succeeds_after_failing(self):
-        @cache
-        def f(_):
-            if should_fail:
-                raise ValueError
-            return "success"
-
-        should_fail = True
-        with should_raise(ValueError):
-            f(None)
-        should_fail = False
-        assert f(None) == "success"
-
-
-class TestSingleton:
-
-    def _test(self, f):
-        self.count = 0
-        f()
-        assert self.count == 1
-        f()
-        assert self.count == 1
-
-    def test_function(self):
-        @cache()
-        def f():
-            self.count += 1
-
-        self._test(f)
-
-    def test_instance_method(self):
-        class C:
-            @cache(method=True)
-            def f(_):
-                self.count += 1
-
-        c = C()
-        self._test(c.f)
-
-    def test_instance_method_partial(self):
-        class C:
-            @cache(method=True)
-            def f(_):
-                self.count += 1
-
-        c = C()
-        self._test(partial(C.f, c))
-
-    def test_classmethod(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(cls):
-                self.count += 1
-
-        self._test(C.f)
-
-    def test_classmethod_via_instance(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(cls):
-                self.count += 1
-
-        c = C()
-        self._test(c.f)
-
-    def test_classmethod_subclass(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(cls):
-                self.count += 1
-
-        class D(C):
-            pass
-
-        self._test(D.f)
-        count = self.count
-        C.f()
-        assert self.count == count + 1
-
-    def test_classmethod_subclass_via_instance(self):
-        class C:
-            @classmethod
-            @cache(method=True)
-            def f(cls):
-                self.count += 1
-
-        class D(C):
-            pass
-
-        self._test(D().f)
-        count = self.count
-        C.f()
-        assert self.count == count + 1
-
-    def test_staticmethod(self):
-        class C:
-            @staticmethod
-            @cache()
+            @decorator
             def f():
-                self.count += 1
+                calls["count"] += 1
+                entered.set()
+                release.wait(timeout=2)
+                return calls["count"]
 
-        self._test(C.f)
+            invoke = lambda *args, **kwargs: f(*args, **kwargs)
+            first_form = ((), {})
+            second_form = ((), {})
+        else:
 
-    def test_staticmethod_via_instance(self):
+            @decorator
+            def f(a, b=2):
+                calls["count"] += 1
+                entered.set()
+                release.wait(timeout=2)
+                return calls["count"]
+
+            invoke = lambda *args, **kwargs: f(*args, **kwargs)
+            first_form = ((1, 2), {})
+            second_form = ((1,), {"b": 2})
+
+    elif target_kind == "instance_method":
+
         class C:
-            @staticmethod
-            @cache()
+            if arity == "singleton":
+
+                @decorator
+                def f(self):
+                    calls["count"] += 1
+                    entered.set()
+                    release.wait(timeout=2)
+                    return calls["count"]
+
+            else:
+
+                @decorator
+                def f(self, a, b=2):
+                    calls["count"] += 1
+                    entered.set()
+                    release.wait(timeout=2)
+                    return calls["count"]
+
+        inst = C()
+        invoke = lambda *args, **kwargs: inst.f(*args, **kwargs)
+        first_form = ((), {}) if arity == "singleton" else ((1, 2), {})
+        second_form = ((), {}) if arity == "singleton" else ((1,), {"b": 2})
+
+    else:
+
+        class C:
+            if arity == "singleton":
+
+                @decorator
+                @classmethod
+                def f(cls):
+                    calls["count"] += 1
+                    entered.set()
+                    release.wait(timeout=2)
+                    return calls["count"]
+
+            else:
+
+                @decorator
+                @classmethod
+                def f(cls, a, b=2):
+                    calls["count"] += 1
+                    entered.set()
+                    release.wait(timeout=2)
+                    return calls["count"]
+
+        invoke = lambda *args, **kwargs: C.f(*args, **kwargs)
+        first_form = ((), {}) if arity == "singleton" else ((1, 2), {})
+        second_form = ((), {}) if arity == "singleton" else ((1,), {"b": 2})
+
+    results = []
+
+    def worker(args, kwargs):
+        results.append(invoke(*args, **kwargs))
+
+    t1 = threading.Thread(target=worker, args=first_form)
+    t2 = threading.Thread(target=worker, args=second_form)
+    t1.start()
+    assert entered.wait(timeout=1)
+    t2.start()
+    time.sleep(0.05)
+    assert calls["count"] == 1
+
+    release.set()
+    t1.join(timeout=2)
+    t2.join(timeout=2)
+    assert not t1.is_alive()
+    assert not t2.is_alive()
+    assert calls["count"] == 1
+    assert sorted(results) == [1, 1]
+
+
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+@pytest.mark.parametrize("arity", ARITIES)
+def test_do_not_cache_waiter_retries_matrix(target_kind, arity):
+    calls = {"count": 0}
+    entered = threading.Event()
+    release = threading.Event()
+
+    decorator = cache
+
+    if target_kind == "function":
+        if arity == "singleton":
+
+            @decorator
             def f():
-                self.count += 1
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    entered.set()
+                    release.wait(timeout=2)
+                    raise DoNotCache("temporary")
+                return calls["count"]
 
-        self._test(C().f)
+            invoke = lambda *args, **kwargs: f(*args, **kwargs)
+            form = ((), {})
+        else:
 
-    def test_staticmethod_subclass(self):
+            @decorator
+            def f(a, b=2):
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    entered.set()
+                    release.wait(timeout=2)
+                    raise DoNotCache("temporary")
+                return calls["count"]
+
+            invoke = lambda *args, **kwargs: f(*args, **kwargs)
+            form = ((1, 2), {})
+
+    elif target_kind == "instance_method":
+
         class C:
-            @staticmethod
-            @cache()
+            if arity == "singleton":
+
+                @decorator
+                def f(self):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise DoNotCache("temporary")
+                    return calls["count"]
+
+            else:
+
+                @decorator
+                def f(self, a, b=2):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise DoNotCache("temporary")
+                    return calls["count"]
+
+        inst = C()
+        invoke = lambda *args, **kwargs: inst.f(*args, **kwargs)
+        form = ((), {}) if arity == "singleton" else ((1, 2), {})
+
+    else:
+
+        class C:
+            if arity == "singleton":
+
+                @decorator
+                @classmethod
+                def f(cls):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise DoNotCache("temporary")
+                    return calls["count"]
+
+            else:
+
+                @decorator
+                @classmethod
+                def f(cls, a, b=2):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise DoNotCache("temporary")
+                    return calls["count"]
+
+        invoke = lambda *args, **kwargs: C.f(*args, **kwargs)
+        form = ((), {}) if arity == "singleton" else ((1, 2), {})
+
+    results = {}
+
+    def first():
+        args, kwargs = form
+        results["first"] = invoke(*args, **kwargs)
+
+    def second():
+        args, kwargs = form
+        results["second"] = invoke(*args, **kwargs)
+
+    t1 = threading.Thread(target=first)
+    t2 = threading.Thread(target=second)
+    t1.start()
+    assert entered.wait(timeout=1)
+    t2.start()
+    time.sleep(0.05)
+    release.set()
+
+    t1.join(timeout=2)
+    t2.join(timeout=2)
+    assert not t1.is_alive()
+    assert not t2.is_alive()
+
+    assert results["first"] == "temporary"
+    assert results["second"] == 2
+    assert calls["count"] == 2
+
+    args, kwargs = form
+    assert invoke(*args, **kwargs) == 2
+    assert calls["count"] == 2
+
+
+@pytest.mark.parametrize("target_kind", TARGET_KINDS)
+@pytest.mark.parametrize("arity", ARITIES)
+def test_non_do_not_cache_exception_not_cached_matrix(target_kind, arity):
+    calls = {"count": 0}
+    entered = threading.Event()
+    release = threading.Event()
+    exceptions = []
+
+    class Boom(Exception):
+        pass
+
+    decorator = cache
+
+    if target_kind == "function":
+        if arity == "singleton":
+
+            @decorator
             def f():
-                self.count += 1
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    entered.set()
+                    release.wait(timeout=2)
+                    raise Boom("boom")
+                return calls["count"]
 
-        class D(C):
-            pass
+            invoke = lambda *args, **kwargs: f(*args, **kwargs)
+            form = ((), {})
+        else:
 
-        self._test(D.f)
+            @decorator
+            def f(a, b=2):
+                calls["count"] += 1
+                if calls["count"] == 1:
+                    entered.set()
+                    release.wait(timeout=2)
+                    raise Boom("boom")
+                return calls["count"]
 
-    def test_staticmethod_subclass_via_instance(self):
+            invoke = lambda *args, **kwargs: f(*args, **kwargs)
+            form = ((1, 2), {})
+
+    elif target_kind == "instance_method":
+
         class C:
-            @staticmethod
-            @cache()
-            def f():
-                self.count += 1
+            if arity == "singleton":
 
-        class D(C):
-            pass
+                @decorator
+                def f(self):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise Boom("boom")
+                    return calls["count"]
 
-        self._test(D().f)
+            else:
 
-    def test_two_instances(self):
+                @decorator
+                def f(self, a, b=2):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise Boom("boom")
+                    return calls["count"]
+
+        inst = C()
+        invoke = lambda *args, **kwargs: inst.f(*args, **kwargs)
+        form = ((), {}) if arity == "singleton" else ((1, 2), {})
+
+    else:
+
         class C:
-            @cache(method=True)
-            def f(_):
-                self.count += 1
+            if arity == "singleton":
 
-        c = C()
-        c2 = C()
+                @decorator
+                @classmethod
+                def f(cls):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise Boom("boom")
+                    return calls["count"]
 
-        self._test(c.f)
-        self._test(c2.f)
+            else:
 
-    def test_property(self):
-        class C:
-            @property
-            @cache(method=True)
-            def f(_):
-                self.count += 1
+                @decorator
+                @classmethod
+                def f(cls, a, b=2):
+                    calls["count"] += 1
+                    if calls["count"] == 1:
+                        entered.set()
+                        release.wait(timeout=2)
+                        raise Boom("boom")
+                    return calls["count"]
 
-        self.count = 0
-        c = C()
-        c.f
-        assert self.count == 1
-        c.f
-        assert self.count == 1
+        invoke = lambda *args, **kwargs: C.f(*args, **kwargs)
+        form = ((), {}) if arity == "singleton" else ((1, 2), {})
+
+    def worker():
+        try:
+            args, kwargs = form
+            invoke(*args, **kwargs)
+        except Exception as exc:
+            exceptions.append(exc)
+
+    t1 = threading.Thread(target=worker)
+    t2 = threading.Thread(target=worker)
+    t1.start()
+    assert entered.wait(timeout=1)
+    t2.start()
+    time.sleep(0.05)
+    release.set()
+
+    t1.join(timeout=2)
+    t2.join(timeout=2)
+    assert not t1.is_alive()
+    assert not t2.is_alive()
+    assert len(exceptions) == 2
+    assert all(isinstance(exc, Boom) for exc in exceptions)
+    assert calls["count"] == 1
+
+    args, kwargs = form
+    assert invoke(*args, **kwargs) == 2
+    assert calls["count"] == 2
