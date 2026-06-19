@@ -2,7 +2,12 @@ class RequirementException(Exception):
     pass
 
 
-def require(condition, message="", _exc=RequirementException, **kwargs):
+def require(
+    condition: object,
+    message: str = "",
+    _exc: type[Exception] = RequirementException,
+    **kwargs: object,
+) -> None:
     """
     Similar to `assert condition, message` but allows controlling the exception type and structured keyword arguments
     """

@@ -1,8 +1,16 @@
-def identity(x):
+from collections.abc import Iterable, Mapping
+from typing import Callable, TypeVar
+
+
+T = TypeVar("T")
+R = TypeVar("R")
+
+
+def identity(x: T) -> T:
     return x
 
 
-def kw(f):
+def kw(f: Callable[..., R]) -> Callable[[Mapping[str, object]], R]:
     """
     Convert a function to take a single dictionary of keyword arguments
 
@@ -20,13 +28,13 @@ def kw(f):
         kwargs.map(kw(lambda a=0, b=0: a + b))
     """
 
-    def kw(kw):
+    def kw(kw: Mapping[str, object]) -> R:
         return f(**kw)
 
     return kw
 
 
-def t(f):
+def t(f: Callable[..., R]) -> Callable[[Iterable[object]], R]:
     """
     Convert a function of N arguments to a function of one N-degree tuple
 
@@ -46,7 +54,7 @@ def t(f):
         pairs.map(t(lambda a, b: a + b))
     """
 
-    def t(t):
+    def t(t: Iterable[object]) -> R:
         return f(*t)
 
     return t
