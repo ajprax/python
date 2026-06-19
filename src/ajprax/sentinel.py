@@ -4,15 +4,17 @@ from typing import TypeVar
 S = TypeVar("S", bound="Sentinel")
 
 
-class Sentinel(object):
+class _SentinelMeta(type):
+    def __str__(cls) -> str:
+        return cls.__name__
+
+    def __repr__(cls) -> str:
+        return cls.__name__
+
+
+class Sentinel(metaclass=_SentinelMeta):
     def __new__(cls: type[S], *a: object, **kw: object) -> type[S]:
         return cls
-
-    def __str__(self) -> str:
-        return self.__class__.__name__
-
-    def __repr__(self) -> str:
-        return self.__class__.__name__
 
 
 class Unset(Sentinel):
