@@ -307,8 +307,8 @@ class TestDict:
         test([b, a])
         test([a, b, c])
 
-    def test_count(self):
-        test = by_eq(Dict, "count")
+    def test_counts(self):
+        test = by_eq(Dict, "counts")
 
         a, b, c = enumerate("abc")
 
@@ -1580,8 +1580,8 @@ class TestIter:
         test([2, 4], [1, 2], True, "map", double)
         test([1, 2], [1, 2], False, "map", double)
 
-    def test_count(self):
-        test = by_eq(Iter, "count")
+    def test_counts(self):
+        test = by_eq(Iter, "counts")
 
         for items in Iter(["a", "b", "b"]).permutations(3):
             test({"a": 1, "b": 2}, items)
@@ -2555,8 +2555,8 @@ class TestList:
         test([2, 1])
         test([1, 2, 3])
 
-    def test_count(self):
-        test = by_eq(List, "count")
+    def test_counts(self):
+        test = by_eq(List, "counts")
 
         test({}, [])
         test({1: 1}, [1])
@@ -3475,8 +3475,8 @@ class TestRange:
         test([0, 2, 4], range(0, 6, 2), False, "take", 5)
         test([0, 2], range(0, 6, 2), True, "take", 2)
 
-    def test_count(self):
-        test = by_eq(Range, "count")
+    def test_counts(self):
+        test = by_eq(Range, "counts")
 
         test({}, range(0))
         test({0: 1, 1: 1, 2: 1}, range(3))
@@ -4305,8 +4305,8 @@ class TestSet:
         test([2, 1])
         test([1, 2, 3])
 
-    def test_count(self):
-        test = by_eq(Set, "count")
+    def test_counts(self):
+        test = by_eq(Set, "counts")
 
         test({1: 2, 2: 1}, ["a", "ab", "b"], len)
         test({True: 2, False: 1}, [1, 2, 0], bool)
@@ -5078,8 +5078,8 @@ class TestTuple:
         test([2, 4, 6], [1, 2, 3], True, "map", double)
         test([1, 2, 3], [1, 2, 3], False, "map", double)
 
-    def test_count(self):
-        test = by_eq(Tuple, "count")
+    def test_counts(self):
+        test = by_eq(Tuple, "counts")
 
         test({}, [])
         test({1: 1}, [1])

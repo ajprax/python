@@ -1,13 +1,37 @@
+from __future__ import annotations
+
 import functools
 import itertools
 import time
 from collections import defaultdict, deque
 from operator import itemgetter, add
+from typing import (
+    Callable,
+    Dict as TypingDict,
+    Generic,
+    Iterable,
+    Iterator,
+    List as TypingList,
+    Set as TypingSet,
+    Tuple as TypingTuple,
+    Type,
+    TypeVar,
+    Union,
+    overload,
+)
+
+K = TypeVar("K")
+K_co = TypeVar("K_co", covariant=True)
+T = TypeVar("T")
+T_co = TypeVar("T_co", covariant=True)
+U = TypeVar("U")
+V = TypeVar("V")
+V_co = TypeVar("V_co", covariant=True)
 
 try:
     from operator import call
 except ImportError:
-    def call(f):
+    def call(f: Callable[[], T]) -> T:
         return f()
 
 from ajprax.hof import identity
@@ -25,28 +49,156 @@ dict_keys = type({}.keys())
 dict_values = type({}.values())
 
 
-def count(start=0, step=1):
+@overload
+def count() -> Iter[int]:
+    ...
+
+
+@overload
+def count(start: int) -> Iter[int]:
+    ...
+
+
+@overload
+def count(start: float) -> Iter[float]:
+    ...
+
+
+@overload
+def count(start: complex) -> Iter[complex]:
+    ...
+
+
+@overload
+def count(start: int, step: int) -> Iter[int]:
+    ...
+
+
+@overload
+def count(start: int, step: float) -> Iter[float]:
+    ...
+
+
+@overload
+def count(start: float, step: Union[int, float]) -> Iter[float]:
+    ...
+
+
+@overload
+def count(start: Union[int, float], step: complex) -> Iter[complex]:
+    ...
+
+
+@overload
+def count(start: complex, step: Union[int, float, complex]) -> Iter[complex]:
+    ...
+
+
+def count(
+    start: Union[int, float, complex] = 0,
+    step: Union[int, float, complex] = 1,
+) -> Iter[Union[int, float, complex]]:
     return Iter(itertools.count(start, step))
 
 
-def repeated(item, n=Unset):
+def repeated(item: T, n: Union[int, Type[Unset]] = Unset) -> Iter[T]:
     if n is Unset:
         return Iter(itertools.repeat(item))
     return Iter(itertools.repeat(item, n))
 
 
-def repeatedly(f, n=Unset):
+def repeatedly(f: Callable[[], T], n: Union[int, Type[Unset]] = Unset) -> Iter[T]:
     return repeated(f, n).map(call)
 
 
-def timestamp(clock=time.time):
-    def inner(item):
+def timestamp(clock: Callable[[], U] = time.time) -> Callable[[T], tuple[U, T]]:
+    def inner(item: T) -> tuple[U, T]:
         return clock(), item
 
     return inner
 
 
-def wrap(it):
+@overload
+def wrap(it: DefaultDict[K, V]) -> DefaultDict[K, V]:
+    ...
+
+
+@overload
+def wrap(it: Dict[K, V]) -> Dict[K, V]:
+    ...
+
+
+@overload
+def wrap(it: DictKeys[K]) -> DictKeys[K]:
+    ...
+
+
+@overload
+def wrap(it: DictValues[V]) -> DictValues[V]:
+    ...
+
+
+@overload
+def wrap(it: Iter[T]) -> Iter[T]:
+    ...
+
+
+@overload
+def wrap(it: List[T]) -> List[T]:
+    ...
+
+
+@overload
+def wrap(it: Range) -> Range:
+    ...
+
+
+@overload
+def wrap(it: Set[T]) -> Set[T]:
+    ...
+
+
+@overload
+def wrap(it: Tuple[T]) -> Tuple[T]:
+    ...
+
+
+@overload
+def wrap(it: defaultdict[K, V]) -> DefaultDict[K, V]:
+    ...
+
+
+@overload
+def wrap(it: TypingDict[K, V]) -> Dict[K, V]:
+    ...
+
+
+@overload
+def wrap(it: TypingList[T]) -> List[T]:
+    ...
+
+
+@overload
+def wrap(it: TypingSet[T]) -> Set[T]:
+    ...
+
+
+@overload
+def wrap(it: range) -> Range:
+    ...
+
+
+@overload
+def wrap(it: TypingTuple[T, ...]) -> Tuple[T]:
+    ...
+
+
+@overload
+def wrap(it: Iterable[T]) -> Iter[T]:
+    ...
+
+
+def wrap(it: object) -> object:
     return {
         DefaultDict: identity,
         Dict: identity,
@@ -68,8 +220,8 @@ def wrap(it):
     }.get(type(it), Iter)(it)
 
 
-class Dict(dict):
-    def __iter__(self):
+class Dict(TypingDict[K, V]):
+    def __iter__(self) -> Iter[K]:
         return Iter(dict.__iter__(self))
 
     def all(self, key=Unset):
@@ -102,12 +254,12 @@ class Dict(dict):
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def copy(self):
+    def copy(self) -> Dict[K, V]:
         return Dict(dict.copy(self))
 
     # key is required because items are guaranteed unique
-    def count(self, key):
-        return self.items().count(key=key)
+    def counts(self, key: Callable[[tuple[K, V]], U]) -> Dict[U, int]:
+        return self.items().counts(key=key)
 
     def cycle(self):
         return self.items().cycle()
@@ -115,7 +267,7 @@ class Dict(dict):
     def default_dict(self, default_factory):
         return DefaultDict(default_factory).update(self)
 
-    def dict(self):
+    def dict(self) -> Dict[K, V]:
         return self
 
     # key is required because items are guaranteed unique
@@ -191,16 +343,16 @@ class Dict(dict):
     def invert(self):
         return self.items().map(reversed).dict()
 
-    def items(self):
+    def items(self) -> Iter[tuple[K, V]]:
         return Iter(dict.items(self))
 
-    def keys(self):
+    def keys(self) -> DictKeys[K]:
         return DictKeys(dict.keys(self))
 
     def last(self, predicate=Unset, default=Unset):
         return self.items().last(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[tuple[K, V]]:
         return List(self.items())
 
     def map(self, f):
@@ -243,10 +395,10 @@ class Dict(dict):
     def repeat(self, n=Unset):
         return self.items().repeat(n=n)
 
-    def set(self):
+    def set(self) -> Set[tuple[K, V]]:
         return Set(self.items())
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -268,7 +420,7 @@ class Dict(dict):
         def tqdm(self, *a, **kw):
             return self.items().tqdm(*a, **kw)
 
-    def tuple(self):
+    def tuple(self) -> Tuple[tuple[K, V]]:
         return self.items().tuple()
 
     def union(self, *others):
@@ -285,7 +437,7 @@ class Dict(dict):
             dict.update(self, E, **F)
         return self
 
-    def values(self):
+    def values(self) -> DictValues[V]:
         return DictValues(dict.values(self))
 
     def zip(self, *others, strict=False):
@@ -295,12 +447,12 @@ class Dict(dict):
         return self.items().zip_longest(*others, fillvalue=fillvalue)
 
 
-class DefaultDict(Dict, defaultdict):
+class DefaultDict(Dict[K, V], defaultdict):
     pass
 
 
-class DictKeys:
-    def __init__(self, keys):
+class DictKeys(Generic[K_co]):
+    def __init__(self, keys: Iterable[K_co]):
         self._keys = keys
 
     def __eq__(self, other):
@@ -308,13 +460,13 @@ class DictKeys:
             other = other._keys
         return self._keys == other
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._keys)
 
     def __repr__(self):
         return repr(self._keys)
 
-    def __iter__(self):
+    def __iter__(self) -> Iter[K_co]:
         return Iter(self._keys)
 
     def all(self, key=Unset):
@@ -343,8 +495,18 @@ class DictKeys:
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def count(self, key=Unset):
-        return self.iter().count(key=key)
+    @overload
+    def counts(self) -> Dict[K_co, int]:
+        ...
+
+    @overload
+    def counts(self, key: Callable[[K_co], U]) -> Dict[U, int]:
+        ...
+
+    def counts(self, key: Union[Callable[[K_co], object], Type[Unset]] = Unset) -> Dict[object, int]:
+        if key is Unset:
+            return self.iter().counts()
+        return self.iter().counts(key=key)
 
     def cycle(self):
         return self.iter().cycle()
@@ -395,13 +557,13 @@ class DictKeys:
     def group_by(self, key=Unset):
         return self.iter().group_by(key=key)
 
-    def iter(self):
+    def iter(self) -> Iter[K_co]:
         return iter(self)
 
     def last(self, predicate=Unset, default=Unset):
         return self.iter().last(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[K_co]:
         return List(self)
 
     def map(self, f):
@@ -446,10 +608,10 @@ class DictKeys:
     def repeat(self, n=Unset):
         return self.iter().repeat(n=n)
 
-    def set(self):
+    def set(self) -> Set[K_co]:
         return Set(self)
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -474,7 +636,7 @@ class DictKeys:
     def transpose(self):
         return self.iter().transpose()
 
-    def tuple(self):
+    def tuple(self) -> Tuple[K_co]:
         return Tuple(self)
 
     unzip = transpose
@@ -486,17 +648,17 @@ class DictKeys:
         return self.iter().zip_longest(*others, fillvalue=fillvalue).set()
 
 
-class DictValues:
-    def __init__(self, values):
+class DictValues(Generic[V_co]):
+    def __init__(self, values: Iterable[V_co]):
         self._values = values
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._values)
 
     def __repr__(self):
         return repr(self._values)
 
-    def __iter__(self):
+    def __iter__(self) -> Iter[V_co]:
         return Iter(self._values)
 
     def all(self, key=Unset):
@@ -525,8 +687,18 @@ class DictValues:
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def count(self, key=Unset):
-        return self.iter().count(key=key)
+    @overload
+    def counts(self) -> Dict[V_co, int]:
+        ...
+
+    @overload
+    def counts(self, key: Callable[[V_co], U]) -> Dict[U, int]:
+        ...
+
+    def counts(self, key: Union[Callable[[V_co], object], Type[Unset]] = Unset) -> Dict[object, int]:
+        if key is Unset:
+            return self.iter().counts()
+        return self.iter().counts(key=key)
 
     def cycle(self):
         return self.iter().cycle()
@@ -580,13 +752,13 @@ class DictValues:
     def intersperse(self, item):
         return self.iter().intersperse(item).tuple()
 
-    def iter(self):
+    def iter(self) -> Iter[V_co]:
         return Iter(self)
 
     def last(self, predicate=Unset, default=Unset):
         return self.iter().last(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[V_co]:
         return List(self)
 
     def map(self, f):
@@ -631,10 +803,10 @@ class DictValues:
     def repeat(self, n=Unset):
         return self.iter().repeat(n=n)
 
-    def set(self):
+    def set(self) -> Set[V_co]:
         return Set(self)
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -662,7 +834,7 @@ class DictValues:
     def transpose(self):
         return self.iter().transpose().tuple()
 
-    def tuple(self):
+    def tuple(self) -> Tuple[V_co]:
         return self
 
     unzip = transpose
@@ -674,8 +846,8 @@ class DictValues:
         return self.iter().zip_longest(*others, fillvalue=fillvalue).tuple()
 
 
-class Iter:
-    def __init__(self, it=()):
+class Iter(Generic[T_co]):
+    def __init__(self, it: Iterable[T_co] = ()):
         self._it = iter(it)
         self._peek = deque()
 
@@ -688,7 +860,7 @@ class Iter:
                 return True
         return False
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[T_co]:
         while self._peek:
             yield self._peek.popleft()
         yield from self._it
@@ -696,7 +868,7 @@ class Iter:
     def __mul__(self, n):
         return self.repeat(n)
 
-    def __next__(self):
+    def __next__(self) -> T_co:
         if self._peek:
             return self._peek.popleft()
         return next(self._it)
@@ -779,11 +951,21 @@ class Iter:
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def count(self, key=Unset):
-        if key is not Unset:
-            self = self.map(key)
-        counts = Dict()
-        for k in self:
+    @overload
+    def counts(self) -> Dict[T_co, int]:
+        ...
+
+    @overload
+    def counts(self, key: Callable[[T_co], U]) -> Dict[U, int]:
+        ...
+
+    def counts(self, key: Union[Callable[[T_co], object], Type[Unset]] = Unset) -> Dict[object, int]:
+        counts: Dict[object, int] = Dict()
+        if key is Unset:
+            keys = self
+        else:
+            keys = self.map(key)
+        for k in keys:
             counts.setdefault(k, 0)
             counts[k] += 1
         return counts
@@ -930,7 +1112,7 @@ class Iter:
 
         return Iter(gen())
 
-    def iter(self):
+    def iter(self) -> Iter[T_co]:
         return self
 
     def last(self, predicate=Unset, default=Unset):
@@ -945,7 +1127,7 @@ class Iter:
                 raise StopIteration
             return default
 
-    def list(self):
+    def list(self) -> List[T_co]:
         return List(self)
 
     def map(self, f):
@@ -996,7 +1178,7 @@ class Iter:
                     maxk = itemk
             return min, max
 
-    def next(self):
+    def next(self) -> T_co:
         return next(self)
 
     def only(self, predicate=Unset, empty_default=Unset, overfull_default=Unset):
@@ -1080,10 +1262,10 @@ class Iter:
             return Iter()
         return repeated(items, n).flatten()
 
-    def set(self):
+    def set(self) -> Set[T_co]:
         return Set(self)
 
-    def size(self):
+    def size(self) -> int:
         count = 0
         for _ in self:
             count += 1
@@ -1198,7 +1380,7 @@ class Iter:
     def transpose(self):
         return Iter(zip(*self, strict=True)).map(Tuple)
 
-    def tuple(self):
+    def tuple(self) -> Tuple[T_co]:
         return Tuple(self)
 
     unzip = transpose
@@ -1210,16 +1392,24 @@ class Iter:
         return Iter(itertools.zip_longest(self, *others, fillvalue=fillvalue))
 
 
-class List(list):
+class List(TypingList[T]):
     def __add__(self, other):
         return List((*self, *other))
+
+    @overload
+    def __getitem__(self, item: int) -> T:
+        ...
+
+    @overload
+    def __getitem__(self, item: slice) -> List[T]:
+        ...
 
     def __getitem__(self, item):
         if isinstance(item, int):
             return list.__getitem__(self, item)
         return List(list.__getitem__(self, item))
 
-    def __iter__(self):
+    def __iter__(self) -> Iter[T]:
         return Iter(list.__iter__(self))
 
     def __mul__(self, other):
@@ -1266,11 +1456,21 @@ class List(list):
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def copy(self):
+    def copy(self) -> List[T]:
         return List(list.copy(self))
 
-    def count(self, key=Unset):
-        return self.iter().count(key=key)
+    @overload
+    def counts(self) -> Dict[T, int]:
+        ...
+
+    @overload
+    def counts(self, key: Callable[[T], U]) -> Dict[U, int]:
+        ...
+
+    def counts(self, key: Union[Callable[[T], object], Type[Unset]] = Unset) -> Dict[object, int]:
+        if key is Unset:
+            return self.iter().counts()
+        return self.iter().counts(key=key)
 
     def cycle(self):
         return self.iter().cycle()
@@ -1341,13 +1541,13 @@ class List(list):
     def intersperse(self, item):
         return self.iter().intersperse(item).list()
 
-    def iter(self):
+    def iter(self) -> Iter[T]:
         return iter(self)
 
     def last(self, predicate=Unset, default=Unset):
         return self.iter().last(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[T]:
         return self
 
     def map(self, f):
@@ -1399,10 +1599,10 @@ class List(list):
     def reversed(self):
         return reversed(self)
 
-    def set(self):
+    def set(self) -> Set[T]:
         return Set(self)
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -1436,7 +1636,7 @@ class List(list):
     def transpose(self):
         return self.iter().transpose().list()
 
-    def tuple(self):
+    def tuple(self) -> Tuple[T]:
         return Tuple(self)
 
     unzip = transpose
@@ -1541,8 +1741,18 @@ class Range:
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def count(self, key=Unset):
-        return self.iter().count(key=key)
+    @overload
+    def counts(self) -> Dict[int, int]:
+        ...
+
+    @overload
+    def counts(self, key: Callable[[int], U]) -> Dict[U, int]:
+        ...
+
+    def counts(self, key: Union[Callable[[int], object], Type[Unset]] = Unset) -> Dict[object, int]:
+        if key is Unset:
+            return self.iter().counts()
+        return self.iter().counts(key=key)
 
     def cycle(self):
         return self.iter().cycle()
@@ -1596,7 +1806,7 @@ class Range:
     def last(self, predicate=Unset, default=Unset):
         return self.reversed().first(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[int]:
         return List(self)
 
     def map(self, f):
@@ -1644,10 +1854,10 @@ class Range:
     def reversed(self):
         return reversed(self)
 
-    def set(self):
+    def set(self) -> Set[int]:
         return Set(self)
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -1683,7 +1893,7 @@ class Range:
         def tqdm(self, *a, **kw):
             return self.iter().tqdm(*a, **kw)
 
-    def tuple(self):
+    def tuple(self) -> Tuple[int]:
         return Tuple(self)
 
     def zip(self, *others, strict=False):
@@ -1693,7 +1903,7 @@ class Range:
         return self.iter().zip_longest(*others, fillvalue=fillvalue)
 
 
-class Set(set):
+class Set(TypingSet[T]):
     def __add__(self, other):
         return Set({*self, *other})
 
@@ -1704,7 +1914,7 @@ class Set(set):
         self.update(other)
         return self
 
-    def __iter__(self):
+    def __iter__(self) -> Iter[T]:
         return Iter(set.__iter__(self))
 
     def __isub__(self, other):
@@ -1755,12 +1965,12 @@ class Set(set):
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def copy(self):
+    def copy(self) -> Set[T]:
         return Set(self)
 
-    def count(self, key):
+    def counts(self, key: Callable[[T], U]) -> Dict[U, int]:
         """key is required since items are guaranteed unique"""
-        return self.iter().count(key=key)
+        return self.iter().counts(key=key)
 
     def cycle(self):
         return self.iter().cycle()
@@ -1819,13 +2029,13 @@ class Set(set):
         """key is required because items are guaranteed unique"""
         return self.iter().group_by(key=key)
 
-    def iter(self):
+    def iter(self) -> Iter[T]:
         return iter(self)
 
     def last(self, predicate=Unset, default=Unset):
         return self.iter().last(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[T]:
         return List(self)
 
     def map(self, f):
@@ -1870,10 +2080,10 @@ class Set(set):
     def repeat(self, n=Unset):
         return self.iter().repeat(n=n)
 
-    def set(self):
+    def set(self) -> Set[T]:
         return self
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -1898,7 +2108,7 @@ class Set(set):
     def transpose(self):
         return self.iter().transpose()
 
-    def tuple(self):
+    def tuple(self) -> Tuple[T]:
         return Tuple(self)
 
     unzip = transpose
@@ -1914,16 +2124,24 @@ class Set(set):
         return self.iter().zip_longest(*others, fillvalue=fillvalue).set()
 
 
-class Tuple(tuple):
+class Tuple(TypingTuple[T_co, ...]):
     def __add__(self, other):
         return Tuple((*self, *other))
+
+    @overload
+    def __getitem__(self, item: int) -> T_co:
+        ...
+
+    @overload
+    def __getitem__(self, item: slice) -> Tuple[T_co]:
+        ...
 
     def __getitem__(self, item):
         if isinstance(item, int):
             return tuple.__getitem__(self, item)
         return Tuple(tuple.__getitem__(self, item))
 
-    def __iter__(self):
+    def __iter__(self) -> Iter[T_co]:
         return Iter(tuple.__iter__(self))
 
     def __mul__(self, other):
@@ -1961,8 +2179,18 @@ class Tuple(tuple):
             return getattr(self, combinator)(*a, **kw)
         return self
 
-    def count(self, key=Unset):
-        return self.iter().count(key=key)
+    @overload
+    def counts(self) -> Dict[T_co, int]:
+        ...
+
+    @overload
+    def counts(self, key: Callable[[T_co], U]) -> Dict[U, int]:
+        ...
+
+    def counts(self, key: Union[Callable[[T_co], object], Type[Unset]] = Unset) -> Dict[object, int]:
+        if key is Unset:
+            return self.iter().counts()
+        return self.iter().counts(key=key)
 
     def cycle(self):
         return self.iter().cycle()
@@ -2018,13 +2246,13 @@ class Tuple(tuple):
     def intersperse(self, item):
         return self.iter().intersperse(item).tuple()
 
-    def iter(self):
+    def iter(self) -> Iter[T_co]:
         return Iter(self)
 
     def last(self, predicate=Unset, default=Unset):
         return self.iter().last(predicate=predicate, default=default)
 
-    def list(self):
+    def list(self) -> List[T_co]:
         return List(self)
 
     def map(self, f):
@@ -2072,10 +2300,10 @@ class Tuple(tuple):
     def reversed(self):
         return reversed(self)
 
-    def set(self):
+    def set(self) -> Set[T_co]:
         return Set(self)
 
-    def size(self):
+    def size(self) -> int:
         return len(self)
 
     def sliding(self, size, step=1):
@@ -2105,7 +2333,7 @@ class Tuple(tuple):
     def transpose(self):
         return self.iter().transpose().tuple()
 
-    def tuple(self):
+    def tuple(self) -> Tuple[T_co]:
         return self
 
     unzip = transpose
