@@ -1,26 +1,57 @@
+from __future__ import annotations
+
 import functools
 import inspect
 import threading
 import weakref
+from typing import (
+    Callable,
+    Generic,
+    Literal,
+    Optional,
+    ParamSpec,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
+
+
+R = TypeVar("R")
+P = ParamSpec("P")
+
+Args = tuple[object, ...]
+Kwargs = dict[str, object]
+Mode = Literal["auto", "class", "static"]
+OwnerKind = Literal["none", "instance", "class"]
+BoundOwnerKind = Literal["instance", "class"]
+CacheKey = object
 
 
 class DoNotCache(Exception):
-    def __init__(self, value):
+    value: object
+
+    def __init__(self, value: object) -> None:
         super().__init__()
         self.value = value
 
 
-class _InFlight:
+class _InFlight(Generic[R]):
     __slots__ = ("event", "value", "exception", "do_not_cache")
 
-    def __init__(self):
+    event: threading.Event
+    value: Optional[R]
+    exception: Optional[BaseException]
+    do_not_cache: bool
+
+    def __init__(self) -> None:
         self.event = threading.Event()
         self.value = None
         self.exception = None
         self.do_not_cache = False
 
 
-class _ScopeState:
+class _ScopeState(Generic[R]):
     __slots__ = (
         "lock",
         "values",
@@ -30,7 +61,13 @@ class _ScopeState:
         "singleton_in_flight",
     )
 
-    def __init__(self):
+    values: dict[CacheKey, R]
+    in_flight: dict[CacheKey, _InFlight[R]]
+    singleton_set: bool
+    singleton_value: Optional[R]
+    singleton_in_flight: Optional[_InFlight[R]]
+
+    def __init__(self) -> None:
         self.lock = threading.RLock()
         self.values = {}
         self.in_flight = {}
@@ -39,14 +76,14 @@ class _ScopeState:
         self.singleton_in_flight = None
 
 
-def _signature_without_first_arg(signature):
+def _signature_without_first_arg(signature: inspect.Signature) -> inspect.Signature:
     params = list(signature.parameters.values())
     if not params:
         return signature
     return signature.replace(parameters=params[1:])
 
 
-def _signatures_match(expected, actual):
+def _signatures_match(expected: inspect.Signature, actual: inspect.Signature) -> bool:
     expected_params = list(expected.parameters.values())
     actual_params = list(actual.parameters.values())
     if len(expected_params) != len(actual_params):
@@ -62,11 +99,13 @@ def _signatures_match(expected, actual):
     return True
 
 
-def _make_canonical_key(signature, args, kwargs):
+def _make_canonical_key(
+    signature: inspect.Signature, args: Args, kwargs: Kwargs
+) -> tuple[tuple[str, object], ...]:
     bound = signature.bind(*args, **kwargs)
     bound.apply_defaults()
 
-    items = []
+    items: list[tuple[str, object]] = []
     for parameter in signature.parameters.values():
         value = bound.arguments[parameter.name]
         if parameter.kind == inspect.Parameter.VAR_POSITIONAL:
@@ -79,49 +118,64 @@ def _make_canonical_key(signature, args, kwargs):
     return tuple(items)
 
 
-class _BoundCachedCallable:
-    def __init__(self, cached, owner_kind, owner):
+class _BoundCachedCallable(Generic[P, R]):
+    def __init__(
+        self, cached: _CachedCallable[..., R], owner_kind: BoundOwnerKind, owner: object
+    ) -> None:
         self._cached = cached
         self._owner_kind = owner_kind
         self._owner = owner
         functools.update_wrapper(self, cached._func)
 
-    def __call__(self, *args, **kwargs):
-        return self._cached._invoke(self._owner_kind, self._owner, args, kwargs)
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
+        return self._cached._invoke(
+            self._owner_kind, self._owner, cast(Args, args), cast(Kwargs, kwargs)
+        )
 
-    def clear(self):
+    def clear(self) -> None:
         self._cached._clear(self._owner_kind, self._owner)
 
-    def remove(self, *args, **kwargs):
-        self._cached._remove(self._owner_kind, self._owner, args, kwargs)
+    def remove(self, *args: P.args, **kwargs: P.kwargs) -> None:
+        self._cached._remove(
+            self._owner_kind, self._owner, cast(Args, args), cast(Kwargs, kwargs)
+        )
 
 
-class _CachedCallable:
-    def __init__(self, func, key=None, mode="auto"):
+class _CachedCallable(Generic[P, R]):
+    def __init__(
+        self,
+        func: Callable[P, R],
+        key: Optional[Callable[..., CacheKey]] = None,
+        mode: Mode = "auto",
+    ) -> None:
         functools.update_wrapper(self, func)
         self._func = func
         self._key_func = key
         self._mode = mode
-        self._declaring_owner = None
+        self._declaring_owner: Optional[type[object]] = None
 
         self._signature = inspect.signature(func)
         self._method_signature = _signature_without_first_arg(self._signature)
         self._is_singleton_full = len(self._signature.parameters) == 0
         self._is_singleton_method = len(self._method_signature.parameters) == 0
 
-        self._global_state = _ScopeState()
-        self._instance_states = weakref.WeakKeyDictionary()
-        self._class_states = weakref.WeakKeyDictionary()
+        self._global_state: _ScopeState[R] = _ScopeState()
+        self._instance_states: weakref.WeakKeyDictionary[object, _ScopeState[R]] = (
+            weakref.WeakKeyDictionary()
+        )
+        self._class_states: weakref.WeakKeyDictionary[object, _ScopeState[R]] = (
+            weakref.WeakKeyDictionary()
+        )
         self._state_lock = threading.RLock()
 
-        self._key_signature = None
+        self._key_signature: Optional[inspect.Signature] = None
         if self._key_func is not None:
             if not callable(self._key_func):
                 raise TypeError("key must be callable")
             self._key_signature = inspect.signature(self._key_func)
             self._validate_key_signature()
 
-    def __set_name__(self, owner, name):
+    def __set_name__(self, owner: type[object], name: str) -> None:
         self._declaring_owner = owner
         if self._key_signature is not None and self._mode == "auto":
             if not _signatures_match(self._method_signature, self._key_signature):
@@ -130,7 +184,19 @@ class _CachedCallable:
                     "excluding self/cls"
                 )
 
-    def __get__(self, obj, owner):
+    @overload
+    def __get__(
+        self, obj: None, owner: Optional[type[object]]
+    ) -> Union[_CachedCallable[..., R], _BoundCachedCallable[..., R]]: ...
+
+    @overload
+    def __get__(
+        self, obj: object, owner: Optional[type[object]]
+    ) -> _BoundCachedCallable[..., R]: ...
+
+    def __get__(
+        self, obj: Optional[object], owner: Optional[type[object]]
+    ) -> Union[_CachedCallable[..., R], _BoundCachedCallable[..., R]]:
         if self._mode == "class":
             return _BoundCachedCallable(self, "class", owner)
         if self._mode == "static":
@@ -139,11 +205,13 @@ class _CachedCallable:
             return self
         return _BoundCachedCallable(self, "instance", obj)
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
         if self._mode == "class":
             if not args:
                 raise TypeError("missing class argument for cached classmethod")
-            return self._invoke("class", args[0], args[1:], kwargs)
+            return self._invoke(
+                "class", args[0], args[1:], cast(Kwargs, kwargs)
+            )
 
         if (
             self._mode == "auto"
@@ -151,17 +219,19 @@ class _CachedCallable:
             and args
             and isinstance(args[0], self._declaring_owner)
         ):
-            return self._invoke("instance", args[0], args[1:], kwargs)
+            return self._invoke(
+                "instance", args[0], args[1:], cast(Kwargs, kwargs)
+            )
 
-        return self._invoke("none", None, args, kwargs)
+        return self._invoke("none", None, cast(Args, args), cast(Kwargs, kwargs))
 
-    def clear(self):
+    def clear(self) -> None:
         self._clear("none", None)
 
-    def remove(self, *args, **kwargs):
-        self._remove("none", None, args, kwargs)
+    def remove(self, *args: P.args, **kwargs: P.kwargs) -> None:
+        self._remove("none", None, cast(Args, args), cast(Kwargs, kwargs))
 
-    def _validate_key_signature(self):
+    def _validate_key_signature(self) -> None:
         if self._key_signature is None:
             return
 
@@ -177,7 +247,9 @@ class _CachedCallable:
         if not valid:
             raise TypeError("key signature does not match decorated function signature")
 
-    def _state_for(self, owner_kind, owner, create=True):
+    def _state_for(
+        self, owner_kind: OwnerKind, owner: Optional[object], create: bool = True
+    ) -> Optional[_ScopeState[R]]:
         if owner_kind == "none":
             return self._global_state
 
@@ -189,7 +261,7 @@ class _CachedCallable:
             except KeyError:
                 if not create:
                     return None
-                state = _ScopeState()
+                state: _ScopeState[R] = _ScopeState()
                 mapping[owner] = state
                 return state
             except TypeError as exc:
@@ -197,24 +269,29 @@ class _CachedCallable:
                     "cache owner must be weak-referenceable to preserve non-leaking semantics"
                 ) from exc
 
-    def _signature_for(self, owner_kind):
+    def _signature_for(self, owner_kind: OwnerKind) -> inspect.Signature:
         if owner_kind in ("instance", "class"):
             return self._method_signature
         return self._signature
 
-    def _is_singleton_for(self, owner_kind):
+    def _is_singleton_for(self, owner_kind: OwnerKind) -> bool:
         if owner_kind in ("instance", "class"):
             return self._is_singleton_method
         return self._is_singleton_full
 
-    def _compute_cache_key(self, owner_kind, args, kwargs):
+    def _compute_cache_key(
+        self, owner_kind: OwnerKind, args: Args, kwargs: Kwargs
+    ) -> CacheKey:
         if self._key_func is not None:
             return self._key_func(*args, **kwargs)
         signature = self._signature_for(owner_kind)
         return _make_canonical_key(signature, args, kwargs)
 
-    def _invoke(self, owner_kind, owner, args, kwargs):
+    def _invoke(
+        self, owner_kind: OwnerKind, owner: Optional[object], args: Args, kwargs: Kwargs
+    ) -> R:
         state = self._state_for(owner_kind, owner, create=True)
+        assert state is not None
         call_signature = self._signature_for(owner_kind)
         call_signature.bind(*args, **kwargs)
 
@@ -226,20 +303,23 @@ class _CachedCallable:
             state, key, lambda: self._call_underlying(owner, args, kwargs)
         )
 
-    def _call_underlying(self, owner, args, kwargs):
+    def _call_underlying(
+        self, owner: Optional[object], args: Args, kwargs: Kwargs
+    ) -> R:
+        func = cast(Callable[..., R], self._func)
         if owner is None:
-            return self._func(*args, **kwargs)
-        return self._func(owner, *args, **kwargs)
+            return func(*args, **kwargs)
+        return func(owner, *args, **kwargs)
 
-    def _invoke_singleton(self, state, compute):
+    def _invoke_singleton(self, state: _ScopeState[R], compute: Callable[[], R]) -> R:
         while True:
             with state.lock:
                 if state.singleton_set:
-                    return state.singleton_value
+                    return cast(R, state.singleton_value)
 
                 in_flight = state.singleton_in_flight
                 if in_flight is None:
-                    in_flight = _InFlight()
+                    in_flight = _InFlight[R]()
                     state.singleton_in_flight = in_flight
                     producer = True
                 else:
@@ -253,9 +333,9 @@ class _CachedCallable:
                         if state.singleton_in_flight is in_flight:
                             state.singleton_in_flight = None
                         in_flight.do_not_cache = True
-                        in_flight.value = exc.value
+                        in_flight.value = cast(R, exc.value)
                         in_flight.event.set()
-                    return exc.value
+                    return cast(R, exc.value)
                 except Exception as exc:
                     with state.lock:
                         if state.singleton_in_flight is in_flight:
@@ -278,9 +358,11 @@ class _CachedCallable:
                 raise in_flight.exception
             if in_flight.do_not_cache:
                 continue
-            return in_flight.value
+            return cast(R, in_flight.value)
 
-    def _invoke_keyed(self, state, key, compute):
+    def _invoke_keyed(
+        self, state: _ScopeState[R], key: CacheKey, compute: Callable[[], R]
+    ) -> R:
         while True:
             with state.lock:
                 if key in state.values:
@@ -288,7 +370,7 @@ class _CachedCallable:
 
                 in_flight = state.in_flight.get(key)
                 if in_flight is None:
-                    in_flight = _InFlight()
+                    in_flight = _InFlight[R]()
                     state.in_flight[key] = in_flight
                     producer = True
                 else:
@@ -301,9 +383,9 @@ class _CachedCallable:
                     with state.lock:
                         state.in_flight.pop(key, None)
                         in_flight.do_not_cache = True
-                        in_flight.value = exc.value
+                        in_flight.value = cast(R, exc.value)
                         in_flight.event.set()
-                    return exc.value
+                    return cast(R, exc.value)
                 except Exception as exc:
                     with state.lock:
                         state.in_flight.pop(key, None)
@@ -323,11 +405,11 @@ class _CachedCallable:
                 raise in_flight.exception
             if in_flight.do_not_cache:
                 continue
-            return in_flight.value
+            return cast(R, in_flight.value)
 
-    def _clear(self, owner_kind, owner):
+    def _clear(self, owner_kind: OwnerKind, owner: Optional[object]) -> None:
         if owner_kind == "none":
-            states = [self._global_state]
+            states: list[_ScopeState[R]] = [self._global_state]
         else:
             state = self._state_for(owner_kind, owner, create=False)
             if state is None:
@@ -340,7 +422,9 @@ class _CachedCallable:
                 state.singleton_set = False
                 state.singleton_value = None
 
-    def _remove(self, owner_kind, owner, args, kwargs):
+    def _remove(
+        self, owner_kind: OwnerKind, owner: Optional[object], args: Args, kwargs: Kwargs
+    ) -> None:
         state = self._state_for(owner_kind, owner, create=False)
         if state is None:
             return
@@ -358,8 +442,35 @@ class _CachedCallable:
             state.values.pop(key, None)
 
 
+@overload
+def cache(
+    f: classmethod[object, P, R],
+    *,
+    key: Optional[Callable[..., CacheKey]] = None,
+) -> _CachedCallable[..., R]: ...
 
-def cache(f=None, *, key=None):
+
+@overload
+def cache(
+    f: staticmethod[P, R], *, key: Optional[Callable[..., CacheKey]] = None
+) -> _CachedCallable[P, R]: ...
+
+
+@overload
+def cache(
+    f: Callable[P, R], *, key: Optional[Callable[..., CacheKey]] = None
+) -> _CachedCallable[P, R]: ...
+
+
+@overload
+def cache(f: None = None, *, key: Optional[Callable[..., CacheKey]] = None) -> Callable[
+    [Callable[P, R]], _CachedCallable[P, R]
+]: ...
+
+
+def cache(
+    f: Optional[object] = None, *, key: Optional[Callable[..., CacheKey]] = None
+) -> object:
     """
     Cache the results of the decorated function.
 
@@ -383,8 +494,12 @@ def cache(f=None, *, key=None):
     """
 
     if f is None:
-        return lambda func: cache(func, key=key)
+        def decorator(func: Callable[P, R]) -> _CachedCallable[P, R]:
+            return cache(func, key=key)
 
+        return decorator
+
+    mode: Mode = "auto"
     if isinstance(f, classmethod):
         wrapped = _CachedCallable(f.__func__, key=key, mode="class")
         return wrapped
@@ -393,4 +508,7 @@ def cache(f=None, *, key=None):
         wrapped = _CachedCallable(f.__func__, key=key, mode="static")
         return wrapped
 
-    return _CachedCallable(f, key=key, mode="auto")
+    if not callable(f):
+        raise TypeError("cache can only decorate callables")
+
+    return _CachedCallable(f, key=key, mode=mode)
