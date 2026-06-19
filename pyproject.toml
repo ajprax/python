@@ -17,10 +17,13 @@ classifiers = [
 dependencies = []
 
 [tool.hatch.envs.test]
-dependencies = ["crcmod", "tqdm", "watchdog"]
+dependencies = ["crcmod", "pyrefly", "tqdm", "watchdog"]
 
 [tool.hatch.envs.test.scripts]
 watch = "python watch_tests.py"
+
+[tool.hatch.envs.hatch-test]
+extra-dependencies = ["crcmod", "pyrefly", "tqdm", "watchdog"]
 
 [project.urls]
 Homepage = "https://github.com/ajprax/python"
