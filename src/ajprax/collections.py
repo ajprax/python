@@ -242,7 +242,7 @@ class Dict(TypingDict[K, V]):
     def chain(self, *its):
         return self.items().chain(*its)
 
-    def clear(self):
+    def clear(self):  # pyrefly: ignore[bad-override, missing-override-decorator]
         dict.clear(self)
         return self
 
@@ -343,10 +343,10 @@ class Dict(TypingDict[K, V]):
     def invert(self):
         return self.items().map(reversed).dict()
 
-    def items(self) -> Iter[tuple[K, V]]:
+    def items(self) -> Iter[tuple[K, V]]:  # pyrefly: ignore[bad-override, missing-override-decorator]
         return Iter(dict.items(self))
 
-    def keys(self) -> DictKeys[K]:
+    def keys(self) -> DictKeys[K]:  # pyrefly: ignore[bad-override, missing-override-decorator]
         return DictKeys(dict.keys(self))
 
     def last(self, predicate=Unset, default=Unset):
@@ -430,14 +430,14 @@ class Dict(TypingDict[K, V]):
                 require(out.setdefault(key, value) == value, "mismatched values", key=key)
         return out
 
-    def update(self, E=Unset, **F):
+    def update(self, E=Unset, **F):  # pyrefly: ignore[bad-override, missing-override-decorator]
         if E is Unset:
             dict.update(self, **F)
         else:
             dict.update(self, E, **F)
         return self
 
-    def values(self) -> DictValues[V]:
+    def values(self) -> DictValues[V]:  # pyrefly: ignore[bad-override, missing-override-decorator]
         return DictValues(dict.values(self))
 
     def zip(self, *others, strict=False):
@@ -1397,7 +1397,7 @@ class List(TypingList[T]):
         return List((*self, *other))
 
     @overload
-    def __getitem__(self, item: int) -> T:
+    def __getitem__(self, item: int) -> T:  # pyrefly: ignore[bad-override, missing-override-decorator]
         ...
 
     @overload
@@ -1428,7 +1428,7 @@ class List(TypingList[T]):
     def any(self, key=Unset):
         return self.iter().any(key=key)
 
-    def append(self, item):
+    def append(self, item):  # pyrefly: ignore[bad-override, missing-override-decorator]
         list.append(self, item)
         return self
 
@@ -1444,7 +1444,7 @@ class List(TypingList[T]):
     def chain(self, *its):
         return self.iter().chain(*its)
 
-    def clear(self):
+    def clear(self):  # pyrefly: ignore[bad-override, missing-override-decorator]
         list.clear(self)
         return self
 
@@ -1506,7 +1506,7 @@ class List(TypingList[T]):
     def enumerate(self, start=0):
         return self.iter().enumerate(start=start).list()
 
-    def extend(self, iterable):
+    def extend(self, iterable):  # pyrefly: ignore[bad-override, missing-override-decorator]
         list.extend(self, iterable)
         return self
 
@@ -1534,7 +1534,7 @@ class List(TypingList[T]):
     def group_by(self, key=Unset):
         return self.iter().group_by(key=key)
 
-    def insert(self, index, item):
+    def insert(self, index, item):  # pyrefly: ignore[bad-override, missing-override-decorator]
         list.insert(self, index, item)
         return self
 
@@ -1592,7 +1592,7 @@ class List(TypingList[T]):
     def repeat(self, n=Unset):
         return self.iter().repeat(n=n)
 
-    def reverse(self):
+    def reverse(self):  # pyrefly: ignore[bad-override, missing-override-decorator]
         list.reverse(self)
         return self
 
@@ -1611,7 +1611,7 @@ class List(TypingList[T]):
     def sliding_by_timestamp(self, size, step=1, stamp=timestamp(time.time)):
         return self.iter().sliding_by_timestamp(size, step=step, stamp=stamp).list()
 
-    def sort(self, key=None, reverse=False):
+    def sort(self, key=None, reverse=False):  # pyrefly: ignore[bad-override, missing-override-decorator]
         list.sort(self, key=key, reverse=reverse)
         return self
 
@@ -1929,7 +1929,7 @@ class Set(TypingSet[T]):
     def __xor__(self, other):
         return Set(set.__xor__(self, other))
 
-    def add(self, item):
+    def add(self, item):  # pyrefly: ignore[bad-override, missing-override-decorator]
         if item in self:
             return False
         set.add(self, item)
@@ -1953,7 +1953,7 @@ class Set(TypingSet[T]):
     def chain(self, *its):
         return self.iter().chain(*its)
 
-    def clear(self):
+    def clear(self):  # pyrefly: ignore[bad-override, missing-override-decorator]
         set.clear(self)
         return self
 
@@ -1981,7 +1981,7 @@ class Set(TypingSet[T]):
     def dict(self):
         return Dict(self)
 
-    def discard(self, item):
+    def discard(self, item):  # pyrefly: ignore[bad-override, missing-override-decorator]
         if item in self:
             self.remove(item)
             return True
@@ -2113,7 +2113,7 @@ class Set(TypingSet[T]):
 
     unzip = transpose
 
-    def update(self, *s):
+    def update(self, *s):  # pyrefly: ignore[bad-override, missing-override-decorator]
         set.update(self, *s)
         return self
 
@@ -2129,7 +2129,7 @@ class Tuple(TypingTuple[T_co, ...]):
         return Tuple((*self, *other))
 
     @overload
-    def __getitem__(self, item: int) -> T_co:
+    def __getitem__(self, item: int) -> T_co:  # pyrefly: ignore[bad-override, missing-override-decorator]
         ...
 
     @overload
