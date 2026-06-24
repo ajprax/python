@@ -359,6 +359,26 @@ def test_instance_cache_state_released_after_gc():
     assert len(descriptor._instance_states) == 0
 
 
+def test_instance_cache_supports_unhashable_owner():
+    @dataclass
+    class C:
+        calls: int = 0
+
+        @cache
+        def f(self, value):
+            self.calls += 1
+            return self.calls, value
+
+    first = C()
+    second = C()
+
+    assert first.f(1) == (1, 1)
+    assert first.f(1) == (1, 1)
+    assert second.f(1) == (1, 1)
+    assert first.calls == 1
+    assert second.calls == 1
+
+
 @pytest.mark.parametrize("target_kind", TARGET_KINDS)
 @pytest.mark.parametrize("arity", ARITIES)
 def test_same_key_concurrency_coalesces_matrix(target_kind, arity):

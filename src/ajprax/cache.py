@@ -160,12 +160,14 @@ class _CachedCallable(Generic[P, R]):
         self._is_singleton_method = len(self._method_signature.parameters) == 0
 
         self._global_state: _ScopeState[R] = _ScopeState()
-        self._instance_states: weakref.WeakKeyDictionary[object, _ScopeState[R]] = (
-            weakref.WeakKeyDictionary()
-        )
-        self._class_states: weakref.WeakKeyDictionary[object, _ScopeState[R]] = (
-            weakref.WeakKeyDictionary()
-        )
+        # WeakKeyDictionary hashes its weak references using the referent's hash.
+        # Index by object id instead, then verify identity on every lookup.
+        self._instance_states: dict[
+            int, tuple[weakref.ReferenceType[object], _ScopeState[R]]
+        ] = {}
+        self._class_states: dict[
+            int, tuple[weakref.ReferenceType[object], _ScopeState[R]]
+        ] = {}
         self._state_lock = threading.RLock()
 
         self._key_signature: Optional[inspect.Signature] = None
@@ -253,21 +255,48 @@ class _CachedCallable(Generic[P, R]):
         if owner_kind == "none":
             return self._global_state
 
-        mapping = self._instance_states if owner_kind == "instance" else self._class_states
+        mapping = (
+            self._instance_states if owner_kind == "instance" else self._class_states
+        )
+        assert owner is not None
+        owner_id = id(owner)
 
         with self._state_lock:
+            entry = mapping.get(owner_id)
+            if entry is not None:
+                if entry[0]() is owner:
+                    return entry[1]
+                # A dead entry can only remain until its weakref callback runs. Remove
+                # it here as well so a reused object id cannot inherit stale state.
+                mapping.pop(owner_id, None)
+
+            if not create:
+                return None
+
             try:
-                return mapping[owner]
-            except KeyError:
-                if not create:
-                    return None
-                state: _ScopeState[R] = _ScopeState()
-                mapping[owner] = state
-                return state
+                owner_ref = weakref.ref(
+                    owner,
+                    lambda ref: self._discard_state(mapping, owner_id, ref),
+                )
             except TypeError as exc:
                 raise TypeError(
                     "cache owner must be weak-referenceable to preserve non-leaking semantics"
                 ) from exc
+
+            state: _ScopeState[R] = _ScopeState()
+            mapping[owner_id] = (owner_ref, state)
+            return state
+
+    def _discard_state(
+        self,
+        mapping: dict[int, tuple[weakref.ReferenceType[object], _ScopeState[R]]],
+        owner_id: int,
+        owner_ref: weakref.ReferenceType[object],
+    ) -> None:
+        with self._state_lock:
+            entry = mapping.get(owner_id)
+            if entry is not None and entry[0] is owner_ref:
+                mapping.pop(owner_id)
 
     def _signature_for(self, owner_kind: OwnerKind) -> inspect.Signature:
         if owner_kind in ("instance", "class"):
