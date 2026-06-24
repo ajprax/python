@@ -489,6 +489,11 @@ class _PropertyLike(Protocol[R_co]):
     def fget(self) -> Optional[Callable[..., R_co]]: ...
 
 
+class _ClassPropertyLike(Protocol[R_co]):
+    @property
+    def __func__(self) -> _PropertyLike[R_co]: ...
+
+
 class _CachedProperty(property, Generic[R_co]):
     @override
     def __init__(
@@ -544,7 +549,38 @@ class _CachedProperty(property, Generic[R_co]):
         self._cached._clear("instance", instance)
 
 
+class _CachedClassProperty(Generic[R_co]):
+    def __init__(
+        self,
+        fget: Optional[Callable[..., R_co]],
+        *,
+        key: Optional[Callable[..., CacheKey]] = None,
+    ) -> None:
+        if fget is None:
+            raise TypeError("cache cannot decorate a class property without a getter")
+        self._cached = _CachedCallable(fget, key=key, mode="class")
+        functools.update_wrapper(cast(Callable[..., object], self), fget)
+
+    def __set_name__(self, owner: type[object], name: str) -> None:
+        self._cached.__set_name__(owner, name)
+
+    def __get__(
+        self, instance: Optional[object], owner: Optional[type[object]] = None
+    ) -> R_co:
+        if owner is None:
+            if instance is None:
+                raise TypeError("cached class property requires an owning class")
+            owner = type(instance)
+        return self._cached._invoke("class", owner, (), {})
+
+    def clear(self, owner: type[object]) -> None:
+        self._cached._clear("class", owner)
+
+
 class _CacheDecorator(Protocol):
+    @overload
+    def __call__(self, f: _ClassPropertyLike[R]) -> _CachedClassProperty[R]: ...
+
     @overload
     def __call__(self, f: _PropertyLike[R]) -> _CachedProperty[R]: ...
 
@@ -556,6 +592,14 @@ class _CacheDecorator(Protocol):
 
     @overload
     def __call__(self, f: Callable[P, R]) -> _CachedCallable[P, R]: ...
+
+
+@overload
+def cache(
+    f: _ClassPropertyLike[R],
+    *,
+    key: Optional[Callable[..., CacheKey]] = None,
+) -> _CachedClassProperty[R]: ...
 
 
 @overload
@@ -606,6 +650,8 @@ def cache(
       decorating an instance method.
     - When decorating a property, `cache` must be the outer decorator. The getter uses a separate cache per
       instance, and a successful setter or deleter call clears that instance's cached value.
+    - When decorating a class property, use `@cache`, `@classmethod`, and `@property` in that order. The
+      getter uses a separate cache per subclass.
     - When `key` is specified, it must be a function with the same signature as the decorated function
       (excluding `self` when decorating an instance method) and returning the cache key. When `key` is
       None, a default key function is used which creates a tuple of all arguments (including keyword
@@ -631,6 +677,10 @@ def cache(
 
     mode: Mode = "auto"
     if isinstance(f, classmethod):
+        if isinstance(f.__func__, property):
+            if f.__func__.fset is not None or f.__func__.fdel is not None:
+                raise TypeError("cached class properties must be read-only")
+            return _CachedClassProperty(f.__func__.fget, key=key)
         wrapped = _CachedCallable(f.__func__, key=key, mode="class")
         return wrapped
 

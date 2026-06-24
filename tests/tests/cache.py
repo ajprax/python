@@ -459,6 +459,57 @@ def test_cached_property_setter_and_deleter_clear_cached_value():
     assert instance.calls == 3
 
 
+def test_cached_class_property_is_scoped_per_subclass():
+    class Base:
+        calls = 0
+
+        @cache
+        @classmethod
+        @property
+        def value(cls) -> int:
+            cls.calls += 1
+            return cls.calls
+
+    class Child(Base):
+        calls = 0
+
+    assert Base.value == 1
+    assert Base.value == 1
+    assert Child.value == 1
+    assert Child.value == 1
+    assert Base.calls == 1
+    assert Child.calls == 1
+
+    descriptor = Base.__dict__["value"]
+    descriptor.clear(Base)
+    assert Base.value == 2
+    assert Child.value == 1
+
+
+def test_cached_class_property_state_released_after_subclass_gc():
+    class Base:
+        @cache
+        @classmethod
+        @property
+        def value(cls) -> int:
+            return 1
+
+    class Child(Base):
+        pass
+
+    assert Child.value == 1
+
+    descriptor = Base.__dict__["value"]
+    assert len(descriptor._cached._class_states) == 1
+
+    ref = weakref.ref(Child)
+    del Child
+    gc.collect()
+
+    assert ref() is None
+    assert len(descriptor._cached._class_states) == 0
+
+
 @pytest.mark.parametrize("target_kind", TARGET_KINDS)
 @pytest.mark.parametrize("arity", ARITIES)
 def test_same_key_concurrency_coalesces_matrix(target_kind, arity):
