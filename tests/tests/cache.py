@@ -379,6 +379,86 @@ def test_instance_cache_supports_unhashable_owner():
     assert second.calls == 1
 
 
+def test_cached_property_is_typed_and_scoped_per_unhashable_instance():
+    @dataclass
+    class C:
+        calls: int = 0
+
+        @cache
+        @property
+        def value(self) -> int:
+            self.calls += 1
+            return self.calls
+
+    first = C()
+    second = C()
+
+    assert first.value == 1
+    assert first.value == 1
+    assert second.value == 1
+    assert first.calls == 1
+    assert second.calls == 1
+
+    C.value.clear(first)
+    assert first.value == 2
+    assert second.value == 1
+
+
+def test_cached_property_state_released_after_gc():
+    class C:
+        @cache
+        @property
+        def value(self) -> int:
+            return 1
+
+    instance = C()
+    assert instance.value == 1
+
+    descriptor = C.__dict__["value"]
+    assert len(descriptor._cached._instance_states) == 1
+
+    ref = weakref.ref(instance)
+    del instance
+    gc.collect()
+
+    assert ref() is None
+    assert len(descriptor._cached._instance_states) == 0
+
+
+def test_cached_property_setter_and_deleter_clear_cached_value():
+    class C:
+        def __init__(self):
+            self.calls = 0
+            self.raw = 1
+
+        @cache
+        @property
+        def value(self) -> int:
+            self.calls += 1
+            return self.raw
+
+        @value.setter
+        def value(self, value: int) -> None:
+            self.raw = value
+
+        @value.deleter
+        def value(self) -> None:
+            self.raw = 0
+
+    instance = C()
+    assert instance.value == 1
+    assert instance.value == 1
+    assert instance.calls == 1
+
+    instance.value = 2
+    assert instance.value == 2
+    assert instance.calls == 2
+
+    del instance.value
+    assert instance.value == 0
+    assert instance.calls == 3
+
+
 @pytest.mark.parametrize("target_kind", TARGET_KINDS)
 @pytest.mark.parametrize("arity", ARITIES)
 def test_same_key_concurrency_coalesces_matrix(target_kind, arity):

@@ -10,6 +10,8 @@ from typing import (
     Literal,
     Optional,
     ParamSpec,
+    Protocol,
+    TYPE_CHECKING,
     TypeVar,
     Union,
     cast,
@@ -18,7 +20,18 @@ from typing import (
 
 
 R = TypeVar("R")
+R_co = TypeVar("R_co", covariant=True)
 P = ParamSpec("P")
+S = TypeVar("S")
+
+if TYPE_CHECKING:
+    from typing_extensions import override
+else:
+
+    def override(f: Callable[P, R]) -> Callable[P, R]:
+        return f
+
+    override.__module__ = "typing_extensions"
 
 Args = tuple[object, ...]
 Kwargs = dict[str, object]
@@ -471,6 +484,88 @@ class _CachedCallable(Generic[P, R]):
             state.values.pop(key, None)
 
 
+class _PropertyLike(Protocol[R_co]):
+    @property
+    def fget(self) -> Optional[Callable[..., R_co]]: ...
+
+
+class _CachedProperty(property, Generic[R_co]):
+    @override
+    def __init__(
+        self,
+        fget: Optional[Callable[..., R_co]] = None,
+        fset: Optional[Callable[..., None]] = None,
+        fdel: Optional[Callable[..., None]] = None,
+        doc: Optional[str] = None,
+        *,
+        key: Optional[Callable[..., CacheKey]] = None,
+    ) -> None:
+        if fget is None:
+            raise TypeError("cache cannot decorate a property without a getter")
+
+        if isinstance(fget, _CachedCallable):
+            self._cached = fget
+        else:
+            self._cached = _CachedCallable(fget, key=key)
+        super().__init__(self._cached, fset, fdel, doc)
+
+    def __set_name__(self, owner: type[object], name: str) -> None:
+        self._cached.__set_name__(owner, name)
+
+    @override
+    def __set__(self, instance: object, value: object) -> None:
+        super().__set__(instance, value)
+        self.clear(instance)
+
+    @override
+    def __delete__(self, instance: object) -> None:
+        super().__delete__(instance)
+        self.clear(instance)
+
+    @override
+    def getter(self, fget: Callable[..., S]) -> _CachedProperty[S]:
+        return _CachedProperty(
+            fget,
+            self.fset,
+            self.fdel,
+            self.__doc__,
+            key=self._cached._key_func,
+        )
+
+    @override
+    def setter(self, fset: Callable[..., None]) -> _CachedProperty[R_co]:
+        return _CachedProperty(self._cached, fset, self.fdel, self.__doc__)
+
+    @override
+    def deleter(self, fdel: Callable[..., None]) -> _CachedProperty[R_co]:
+        return _CachedProperty(self._cached, self.fset, fdel, self.__doc__)
+
+    def clear(self, instance: object) -> None:
+        self._cached._clear("instance", instance)
+
+
+class _CacheDecorator(Protocol):
+    @overload
+    def __call__(self, f: _PropertyLike[R]) -> _CachedProperty[R]: ...
+
+    @overload
+    def __call__(self, f: classmethod[object, P, R]) -> _CachedCallable[..., R]: ...
+
+    @overload
+    def __call__(self, f: staticmethod[P, R]) -> _CachedCallable[P, R]: ...
+
+    @overload
+    def __call__(self, f: Callable[P, R]) -> _CachedCallable[P, R]: ...
+
+
+@overload
+def cache(
+    f: _PropertyLike[R],
+    *,
+    key: Optional[Callable[..., CacheKey]] = None,
+) -> _CachedProperty[R]: ...
+
+
 @overload
 def cache(
     f: classmethod[object, P, R],
@@ -492,9 +587,9 @@ def cache(
 
 
 @overload
-def cache(f: None = None, *, key: Optional[Callable[..., CacheKey]] = None) -> Callable[
-    [Callable[P, R]], _CachedCallable[P, R]
-]: ...
+def cache(
+    f: None = None, *, key: Optional[Callable[..., CacheKey]] = None
+) -> _CacheDecorator: ...
 
 
 def cache(
@@ -509,6 +604,8 @@ def cache(
       can be freed after the instance.
     - When decorating a classmethod, creates a separate cache per subclass with the same semantics as when
       decorating an instance method.
+    - When decorating a property, `cache` must be the outer decorator. The getter uses a separate cache per
+      instance, and a successful setter or deleter call clears that instance's cached value.
     - When `key` is specified, it must be a function with the same signature as the decorated function
       (excluding `self` when decorating an instance method) and returning the cache key. When `key` is
       None, a default key function is used which creates a tuple of all arguments (including keyword
@@ -523,10 +620,14 @@ def cache(
     """
 
     if f is None:
-        def decorator(func: Callable[P, R]) -> _CachedCallable[P, R]:
-            return cache(func, key=key)
+
+        def decorator(func: object) -> object:
+            return cache(cast(Callable[..., object], func), key=key)
 
         return decorator
+
+    if isinstance(f, property):
+        return _CachedProperty(f.fget, f.fset, f.fdel, f.__doc__, key=key)
 
     mode: Mode = "auto"
     if isinstance(f, classmethod):

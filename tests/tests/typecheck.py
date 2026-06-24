@@ -40,3 +40,7 @@ def test_pyrefly_strict() -> None:
         "src/ajprax/experimental/**",
         "src/ajprax",
     )
+
+
+def test_pyrefly_cached_property() -> None:
+    _run_pyrefly("--preset", "strict", "tests/typecheck_cases/cache_property.py")
